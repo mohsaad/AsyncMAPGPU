@@ -16,7 +16,7 @@
 #include <string.h>
 #include <assert.h>
 
-#include "../CPrecisionTimer.h"
+#include "CPrecisionTimer.h"
 
 
 #ifdef _MSC_VER
