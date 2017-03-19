@@ -31,6 +31,7 @@
     The MPGraph class. Defines a graph.
 
 */
+
 template <typename T, typename S>
 class MPGraph
 {
@@ -224,6 +225,7 @@ class MPGraph
 };
 
 template class MPGraph<float, int>;
+template class MPGraph<double, int>;
 
 template <class T, class S>
 class ThreadSync {
@@ -259,6 +261,7 @@ class ThreadSync {
 };
 
 template class ThreadSync<float, int>;
+template class ThreadSync<double, int>;
 
 template <class T, class S>
 class ThreadWorker {
@@ -302,6 +305,7 @@ class ThreadWorker {
 };
 
 template class ThreadWorker<float, int>;
+template class ThreadWorker<double, int>;
 
 template <typename T, typename S>
 class AsyncRMPThread {
@@ -311,6 +315,9 @@ public:
 
     size_t GetBeliefs(MPGraph<T, S>& g, T epsilon, T** belPtr, bool OnlyUnaries);
 };
+
+template class AsyncRMPThread<float, int>;
+template class AsyncRMPThread<double, int>;
 
 template <typename T, typename S>
 class RMP
@@ -322,5 +329,8 @@ class RMP
 
         int RunMP(MPGraph<T, S>& g, T epsilon);
 };
+
+template class RMP<float, int>;
+template class RMP<double, int>;
 
 #endif

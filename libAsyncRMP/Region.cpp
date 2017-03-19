@@ -26,10 +26,31 @@ int MPGraph<T,S>::AddVariables(const std::vector<S>& card) {
 }
 
 template<typename T, typename S>
-const typename MPGraph<T,S>::PotentialID MPGraph<T,S>::AddPotential(const PotentialVector& potVals) {
+const typename MPGraph<T,S>::PotentialID MPGraph<T,S>::AddPotential(const typename MPGraph<T,S>::PotentialVector& potVals) {
     S PotID = S(Potentials.size());
     Potentials.push_back(potVals);
-    return PotentialID{ PotID };
+    return typename MPGraph<T,S>::PotentialID{ PotID };
+}
+
+template<typename T, typename S>
+const typename MPGraph<T,S>::RegionID MPGraph<T,S>::AddRegion(T c_r, const std::vector<S>& varIX, const typename MPGraph<T,S>::PotentialID& p) {
+    S RegID = S(Graph.size());
+    Graph.push_back(new MPNode(c_r, varIX, Potentials[p.PotID].data, Potentials[p.PotID].size));
+    return typename MPGraph<T,S>::RegionID{ RegID };
+}
+
+template<typename T, typename S>
+int MPGraph<T,S>::AddConnection(const RegionID& child, const RegionID& parent) {
+    MPNode* c = Graph[child.RegID];
+    MPNode* p = Graph[parent.RegID];
+
+    LambdaSize += c->GetPotentialSize();
+
+    //c->Parents.push_back(MsgContainer{ 0, p, NULL, std::vector<S>() });
+    //p->Children.push_back(MsgContainer{ 0, c, NULL, std::vector<S>() });
+    c->Parents.push_back(MsgContainer(0, p, NULL, std::vector<S>()));
+    p->Children.push_back(MsgContainer(0, c, NULL, std::vector<S>()));
+    return 0;
 }
 
 template<typename T, typename S>
