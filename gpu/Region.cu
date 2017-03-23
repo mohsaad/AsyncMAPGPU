@@ -1,4 +1,4 @@
-#include "Region.h"
+#include "Region.cu.h"
 
 template<typename T, typename S>
 MPGraph<T,S>::MPGraph() : LambdaSize(0)
@@ -130,6 +130,34 @@ T* MPGraph<T,S>::GetMaxMemComputeMu(T epsilon) const {
 }
 
 template<typename T, typename S>
+T* MPGraph<T,S>::CudaGetMaxMemComputeMu(T epsilon) const {
+    size_t maxMem = 0;
+    for (typename std::vector<EdgeID*>::const_iterator e = Edges.begin(), e_e = Edges.end(); e != e_e; ++e) {
+        EdgeID* edge = *e;
+        size_t s_p_e = edge->newVarSize;
+        MPNode* p_ptr = edge->parentPtr->node;
+
+        T ecp = epsilon*p_ptr->c_r;
+        if (ecp != T(0)) {
+            maxMem = (s_p_e > maxMem) ? s_p_e : maxMem;
+        }
+    }
+
+    // allocate on GPU
+    T* deviceMu;
+    if(maxMem > 0)
+    {
+        cudaMalloc((void**)deviceMu, maxMem * sizeof(T));
+    }
+    else
+    {
+        deviceMu = NULL;
+    }
+
+    return deviceMu;
+}
+
+template<typename T, typename S>
 S* MPGraph<T,S>::GetMaxMemComputeMuIXVar() const {
     size_t maxMem = 0;
     for (size_t r = 0; r < ValidRegionMapping.size(); ++r) {
@@ -139,8 +167,35 @@ S* MPGraph<T,S>::GetMaxMemComputeMuIXVar() const {
             maxMem = (tmp>maxMem) ? tmp : maxMem;
         }
     }
+
     return ((maxMem > 0) ? new S[maxMem] : NULL);
 }
+
+template<typename T, typename S>
+S* MPGraph<T,S>::CudaGetMaxMemComputeMuIXVar() const {
+    size_t maxMem = 0;
+    for (size_t r = 0; r < ValidRegionMapping.size(); ++r) {
+        MPNode* r_ptr = Graph[ValidRegionMapping[r]];
+        for (typename std::vector<MsgContainer>::const_iterator p = r_ptr->Parents.begin(), p_e = r_ptr->Parents.end(); p != p_e; ++p) {
+            size_t tmp = p->edge->newVarIX.size();
+            maxMem = (tmp>maxMem) ? tmp : maxMem;
+        }
+    }
+
+    S* deviceMuIXVar;
+    if(maxMem > 0)
+    {
+        cudaMalloc((void**)deviceMuIXVar, maxMem * sizeof(S));
+    }
+    else
+    {
+        deviceMuIXVar = NULL;
+    }
+
+
+    return deviceMuIXVar;
+}
+
 
 template<typename T, typename S>
 const typename MPGraph<T,S>::RRegionWorkspaceID MPGraph<T,S>::AllocateReparameterizeRegionWorkspaceMem(T epsilon) const {
@@ -156,6 +211,8 @@ const typename MPGraph<T,S>::RRegionWorkspaceID MPGraph<T,S>::AllocateReparamete
 
     return RRegionWorkspaceID{ ((maxMem > 0) ? new T[maxMem] : NULL), GetMaxMemComputeMu(epsilon), GetMaxMemComputeMuIXVar(), ((maxIXMem > 0) ? new S[maxIXMem] : NULL) };
 }
+
+
 
 template<typename T, typename S>
 void MPGraph<T,S>::DeAllocateReparameterizeRegionWorkspaceMem(RRegionWorkspaceID& w) const {
@@ -180,11 +237,53 @@ const typename MPGraph<T,S>::REdgeWorkspaceID MPGraph<T,S>::AllocateReparameteri
     return REdgeWorkspaceID{ GetMaxMemComputeMu(epsilon), GetMaxMemComputeMuIXVar(), ((maxIXMem > 0) ? new S[maxIXMem] : NULL) };
 }
 
+
+/*
+    So what we'll do here is allocate a bunch of arrays on the device, but return a struct on the host containing all those pointers.
+*/
+template<typename T, typename S>
+const typename MPGraph<T,S>::REdgeWorkspaceID MPGraph<T,S>::CudaAllocateReparameterizeEdgeWorkspaceMem(T epsilon) const {
+    size_t maxIXMem = 0;
+    for(typename std::vector<EdgeID*>::const_iterator eb=Edges.begin(), eb_e=Edges.end();eb!=eb_e;++eb) {
+        MPNode* r_ptr = (*eb)->childPtr->node;
+        size_t rNumVar = r_ptr->varIX.size();
+        maxIXMem = (rNumVar>maxIXMem) ? rNumVar : maxIXMem;
+    }
+
+    S* deviceIXMem;
+    if(maxIXMem > 0)
+    {
+        cudaMalloc((void**)deviceIXMem, maxIXMem * sizeof(S));
+    }
+    else
+    {
+        deviceIXMem = NULL;
+    }
+
+
+
+    return REdgeWorkspaceID{ CudaGetMaxMemComputeMu(epsilon), CudaGetMaxMemComputeMuIXVar(), deviceIXMem };
+}
+
 template<typename T, typename S>
 void MPGraph<T,S>::DeAllocateReparameterizeEdgeWorkspaceMem(REdgeWorkspaceID& w) const {
     delete[] w.MuMem;
     delete[] w.MuIXMem;
     delete[] w.IXMem;
+    w.MuMem = NULL;
+    w.MuIXMem = NULL;
+    w.IXMem = NULL;
+}
+
+/*
+    Deallocation function for GPU pointers.
+*/
+
+template<typename T, typename S>
+void MPGraph<T,S>::CudaDeAllocateReparameterizeEdgeWorkspaceMem(REdgeWorkspaceID& w) const {
+    cudaFree(w.MuMem);
+    cudaFree(w.MuIXMem);
+    cudaFree(w.IXMem);
     w.MuMem = NULL;
     w.MuIXMem = NULL;
     w.IXMem = NULL;
@@ -341,6 +440,14 @@ template<typename T, typename S>
 void MPGraph<T,S>::CopyLambda(T* lambdaSrc, T* lambdaDst, size_t s_r_e) const {
     //std::copy(lambdaSrc, lambdaSrc + s_r_e, lambdaDst);
     //memcpy((void*)(lambdaDst), (void*)(lambdaSrc), s_r_e*sizeof(T));
+    for (T* ptr_e = lambdaSrc + s_r_e; ptr_e != lambdaSrc;) {
+        *lambdaDst++ = *lambdaSrc++;
+    }
+}
+
+template<typename T, typename S>
+__device__ void MPGraph<T,S>::CudaCopyLambda(T* lambdaSrc, T* lambdaDst, size_t s_r_e) const
+{
     for (T* ptr_e = lambdaSrc + s_r_e; ptr_e != lambdaSrc;) {
         *lambdaDst++ = *lambdaSrc++;
     }
@@ -1023,6 +1130,11 @@ ThreadWorker<T,S>::ThreadWorker(ThreadSync<T, S>* ts, MPGraph<T, S>* g, T epsilo
     lambdaLocal.assign(msgSize, T(0));
     lambdaBase = &lambdaLocal[0];
 
+
+    // see if cuda works
+    // test = &(g->CudaAllocateReparameterizeEdgeWorkspaceMem(epsilon));
+    //g->CudaDeAllocateReparameterizeEdgeWorkspaceMem(test);
+
     #if WHICH_FUNC==1
         rrw = g->AllocateReparameterizeRegionWorkspaceMem(epsilon);
         uid = new std::uniform_int_distribution<int>(0, g->NumberOfRegionsWithParents() - 1);
@@ -1071,7 +1183,7 @@ template<typename T, typename S>
 void ThreadWorker<T,S>::run() {
     std::cout << "Thread started" << std::endl;
 
-    while (ts->checkSync() ) {
+    while (ts->checkSync()) {
 
         #if WHICH_FUNC==1
                 int ix = (*uid)(eng);
@@ -1127,9 +1239,7 @@ int AsyncRMPThread<T,S>::RunMP(MPGraph<T, S>& g, T epsilon, int numIterations, i
     while (!sy.startFunc()) {
         std::this_thread::sleep_for(std::chrono::milliseconds(1000));
     }
-    std::cout << WaitTimeInMS << "," << numIterations << std::endl;
     for (int k = 0; k < numIterations; ++k) {
-
         std::this_thread::sleep_for(std::chrono::milliseconds(WaitTimeInMS));
         //sy.interruptFunc();
         sy.ComputeDualNoSync();

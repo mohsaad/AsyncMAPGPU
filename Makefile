@@ -5,12 +5,12 @@ LFLAGS =
 LLIBS =
 
 NVCC = nvcc
-NVFLAGS = -use-fast-math
+NVFLAGS = -Wno-deprecated-gpu-targets
 
 ifdef FUNC
 	OPTS = -DWHICH_FUNC=$(FUNC)
 else
-	OPTS = -DWHICH_FUNC=1
+	OPTS = -DWHICH_FUNC=2
 endif
 
 all:
@@ -30,4 +30,4 @@ testAsyncRMP: testAsyncRMP/TestAsyncRMP.cpp libAsyncRMP/Region.h
 	$(CC) testAsyncRMP/TestAsyncRMP.cpp libAsyncRMP/Region.cpp -o bin/testAsyncRMP $(CFLAGS) $(LFLAGS) $(LLIBS) $(OPTS)
 
 testRMP: testRMP/TestRMP.cpp libAsyncRMP/Region.h
-		$(CC) testRMP/TestRMP.cpp libAsyncRMP/Region.cpp -o bin/testRMP $(CFLAGS) $(LFLAGS) $(LLIBS) $(OPTS)
+	$(CC) testRMP/TestRMP.cpp libAsyncRMP/Region.cpp -o bin/testRMP $(CFLAGS) $(LFLAGS) $(LLIBS) $(OPTS)
