@@ -1,6 +1,6 @@
 #include <iostream>
 
-#include "../gpu/Region.cu.h"
+#include "../gpu/Region.h"
 
 
 int main(int, char**) {

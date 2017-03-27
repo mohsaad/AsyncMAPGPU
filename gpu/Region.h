@@ -1,3 +1,4 @@
+
 #ifndef __REGION_H_
 #define __REGION_H_
 
@@ -17,6 +18,7 @@
 #include <assert.h>
 #include <cuda.h>
 
+
 #include "CPrecisionTimer.h"
 
 
@@ -29,9 +31,9 @@
 #endif
 
 #ifdef __CUDACC__
-#define CUDA_CALLABLE_MEMBER __host__ __device__
+#define CUDA_HOSTDEV __host__ __device__
 #else
-#define CUDA_CALLABLE_MEMBER
+#define CUDA_HOSTDEV
 #endif
 
 /*
@@ -87,7 +89,7 @@ class MPGraph
         		void* tmp;
         		std::vector<S> varIX;
 
-                Region(T c_r, T* pot, S potSize, const std::vector<S>& varIX) : c_r(c_r), pot(pot), potSize(potSize), tmp(NULL), varIX(varIX)
+                CUDA_HOSTDEV Region(T c_r, T* pot, S potSize, const std::vector<S>& varIX) : c_r(c_r), pot(pot), potSize(potSize), tmp(NULL), varIX(varIX)
                 {
 
                 };
@@ -201,7 +203,7 @@ class MPGraph
 
         void CopyLambda(T* lambdaSrc, T* lambdaDst, size_t s_r_e) const;
 
-        __device__ void CudaCopyLambda(T* lambdaSrc, T* lambdaDst, size_t s_r_e) const;
+        void CudaCopyLambda(T* lambdaSrc, T* lambdaDst, size_t s_r_e) const;
 
     	void CopyMessagesForLocalFunction(T* lambdaSrc, T* lambdaDst, int r) const;
 
@@ -238,10 +240,6 @@ class MPGraph
     	T ComputeImprovement(T* curBel, T* oldBel);
 
     	void DeleteBeliefs();
-
-
-        __device__ void CopyLambda(T* lambdaSrc, T* lambdaDst, size_t s_r_e);
-
 
 };
 
