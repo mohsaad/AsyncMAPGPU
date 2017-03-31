@@ -25,7 +25,7 @@ T* MPGraph<T,S>::CudaGetMaxMemComputeMu(T epsilon) const {
     else
     {
         deviceMem = NULL;
-    }   
+    }
 
     return deviceMem;
 }
@@ -50,7 +50,7 @@ S* MPGraph<T,S>::CudaGetMaxMemComputeMuIXVar() const {
     else
     {
         deviceMem = NULL;
-    }   
+    }
 
     return deviceMem;
 }
@@ -107,5 +107,34 @@ __device__ void MPGraph<T,S>::CudaCopyLambda(T* lambdaSrc, T* lambdaDst, size_t 
     }
 }
 
+template<typename T, typename S>
+void MPGraph<T,S>::CudaCopyMessagesForEdge(T* lambdaSrc, T* lambdaDst, int e) const {
+    EdgeID* edge = Edges[e];
+    MPNode* r_ptr = edge->childPtr->node;
+    MPNode* p_ptr = edge->parentPtr->node;
 
+    size_t s_r_e = r_ptr->GetPotentialSize();
+    size_t s_p_e = p_ptr->GetPotentialSize();
 
+    
+
+    for (typename std::vector<MsgContainer>::const_iterator pn = r_ptr->Parents.begin(), pn_e = r_ptr->Parents.end(); pn != pn_e; ++pn) {
+        CopyLambda(lambdaSrc + pn->lambda, lambdaDst + pn->lambda, s_r_e);
+    }
+
+    for (typename std::vector<MsgContainer>::const_iterator cn = r_ptr->Children.begin(), cn_e = r_ptr->Children.end(); cn != cn_e; ++cn) {
+        size_t s_r_c = cn->node->GetPotentialSize();
+        CopyLambda(lambdaSrc + cn->lambda, lambdaDst + cn->lambda, s_r_c);
+    }
+
+    for (typename std::vector<MsgContainer>::const_iterator p_hat = p_ptr->Parents.begin(), p_hat_e = p_ptr->Parents.end(); p_hat != p_hat_e; ++p_hat) {
+        CopyLambda(lambdaSrc + p_hat->lambda, lambdaDst + p_hat->lambda, s_p_e);
+    }
+
+    for (typename std::vector<MsgContainer>::const_iterator c_hat = p_ptr->Children.begin(), c_hat_e = p_ptr->Children.end(); c_hat != c_hat_e; ++c_hat) {
+        if (c_hat->node != r_ptr) {
+            size_t s_r_pc = c_hat->node->GetPotentialSize();
+            CopyLambda(lambdaSrc + c_hat->lambda, lambdaDst + c_hat->lambda, s_r_pc);
+        }
+    }
+}

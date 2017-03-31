@@ -213,6 +213,8 @@ class MPGraph
 
     	void CopyMessagesForEdge(T* lambdaSrc, T* lambdaDst, int e) const;
 
+        void CudaCopyMessagesForEdge(T* lambdaSrc, T* lambdaDst, int e) const 
+
         void CopyMessagesForStar(T* lambdaSrc, T* lambdaDst, int r) const;
 
         void ReparameterizeEdge(T* lambdaBase, int e, T epsilon, bool additiveUpdate, REdgeWorkspaceID& wspace);

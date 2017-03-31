@@ -426,12 +426,16 @@ void MPGraph<T,S>::UpdateLocalFunction(T* lambdaBase, T* lambdaGlobal, int r, bo
             size_t s_r_c = cn->node->GetPotentialSize();
             for(size_t s_c = 0; s_c != s_r_c; ++s_c) {
                 lambdaGlobal[cn->lambda + s_c] += lambdaBase[cn->lambda + s_c];
-            }
+            }cc
         }
     } else {
         assert(false);
     }
 }
+
+// so this function runs in a single thread, meaning it's copying to each individual thread
+// so instead  what we're going to do is copy from global memory
+//
 
 template<typename T, typename S>
 void MPGraph<T,S>::CopyMessagesForEdge(T* lambdaSrc, T* lambdaDst, int e) const {
