@@ -18,6 +18,10 @@
 #include <assert.h>
 #include <cuda.h>
 
+// vectors for lambdaGlobal
+#include <thrust/host_vector.h>
+#include <thrust/device_vector.h>
+
 
 #include "CPrecisionTimer.h"
 
@@ -36,6 +40,8 @@
 #define CUDA_HOSTDEV
 #endif
 
+
+#define BLOCK_SIZE 256
 /*
     The MPGraph class. Defines a graph.
 
@@ -89,7 +95,7 @@ class MPGraph
         		void* tmp;
         		std::vector<S> varIX;
 
-                CUDA_HOSTDEV Region(T c_r, T* pot, S potSize, const std::vector<S>& varIX) : c_r(c_r), pot(pot), potSize(potSize), tmp(NULL), varIX(varIX)
+                Region(T c_r, T* pot, S potSize, const std::vector<S>& varIX) : c_r(c_r), pot(pot), potSize(potSize), tmp(NULL), varIX(varIX)
                 {
 
                 };
@@ -145,103 +151,101 @@ class MPGraph
 
         virtual ~MPGraph();
 
-        int AddVariables(const std::vector<S>& card);
+        CUDA_HOSTDEV int AddVariables(const std::vector<S>& card);
 
-        const PotentialID AddPotential(const PotentialVector& potVals);
+        CUDA_HOSTDEV const PotentialID AddPotential(const PotentialVector& potVals);
 
-        const RegionID AddRegion(T c_r, const std::vector<S>& varIX, const PotentialID& p);
+        CUDA_HOSTDEV const RegionID AddRegion(T c_r, const std::vector<S>& varIX, const PotentialID& p);
 
-        int AddConnection(const RegionID& child, const RegionID& parent);
+        CUDA_HOSTDEV int AddConnection(const RegionID& child, const RegionID& parent);
 
-        int AllocateMessageMemory();
+        CUDA_HOSTDEV int AllocateMessageMemory();
 
-        const DualWorkspaceID AllocateDualWorkspaceMem(T epsilon) const;
+        CUDA_HOSTDEV const DualWorkspaceID AllocateDualWorkspaceMem(T epsilon) const;
 
-    	void DeAllocateDualWorkspaceMem(DualWorkspaceID& dw) const;
+    	CUDA_HOSTDEV void DeAllocateDualWorkspaceMem(DualWorkspaceID& dw) const;
 
-    	T* GetMaxMemComputeMu(T epsilon) const;
+    	CUDA_HOSTDEV T* GetMaxMemComputeMu(T epsilon) const;
 
-        T* CudaGetMaxMemComputeMu(T epsilon) const;
+        CUDA_HOSTDEV T* CudaGetMaxMemComputeMu(T epsilon) const;
 
-        S* GetMaxMemComputeMuIXVar() const;
+        CUDA_HOSTDEV S* GetMaxMemComputeMuIXVar() const;
 
-        S* CudaGetMaxMemComputeMuIXVar() const;
+        CUDA_HOSTDEV S* CudaGetMaxMemComputeMuIXVar() const;
 
-        const RRegionWorkspaceID AllocateReparameterizeRegionWorkspaceMem(T epsilon) const;
+        CUDA_HOSTDEV const RRegionWorkspaceID AllocateReparameterizeRegionWorkspaceMem(T epsilon) const;
 
-        void DeAllocateReparameterizeRegionWorkspaceMem(RRegionWorkspaceID& w) const;
+        CUDA_HOSTDEV void DeAllocateReparameterizeRegionWorkspaceMem(RRegionWorkspaceID& w) const;
 
-    	const REdgeWorkspaceID AllocateReparameterizeEdgeWorkspaceMem(T epsilon) const;
+    	CUDA_HOSTDEV const REdgeWorkspaceID AllocateReparameterizeEdgeWorkspaceMem(T epsilon) const;
 
-        const REdgeWorkspaceID CudaAllocateReparameterizeEdgeWorkspaceMem(T epsilon) const;
+        CUDA_HOSTDEV const REdgeWorkspaceID CudaAllocateReparameterizeEdgeWorkspaceMem(T epsilon) const;
 
-    	void DeAllocateReparameterizeEdgeWorkspaceMem(REdgeWorkspaceID& w) const;
+    	CUDA_HOSTDEV void DeAllocateReparameterizeEdgeWorkspaceMem(REdgeWorkspaceID& w) const;
 
-        void CudaDeAllocateReparameterizeEdgeWorkspaceMem(REdgeWorkspaceID& w) const;
+        CUDA_HOSTDEV void CudaDeAllocateReparameterizeEdgeWorkspaceMem(REdgeWorkspaceID& w) const;
 
-        const GEdgeWorkspaceID AllocateGradientEdgeWorkspaceMem() const;
+        CUDA_HOSTDEV const GEdgeWorkspaceID AllocateGradientEdgeWorkspaceMem() const;
 
-    	void DeAllocateGradientEdgeWorkspaceMem(GEdgeWorkspaceID& w) const;
+    	CUDA_HOSTDEV void DeAllocateGradientEdgeWorkspaceMem(GEdgeWorkspaceID& w) const;
 
-        const FunctionUpdateWorkspaceID AllocateFunctionUpdateWorkspaceMem() const;
+        CUDA_HOSTDEV const FunctionUpdateWorkspaceID AllocateFunctionUpdateWorkspaceMem() const;
 
-        void DeAllocateFunctionUpdateWorkspaceID(FunctionUpdateWorkspaceID& w) const;
+        CUDA_HOSTDEV void DeAllocateFunctionUpdateWorkspaceID(FunctionUpdateWorkspaceID& w) const;
 
-        int FillEdge();
+        CUDA_HOSTDEV int FillEdge();
 
-    	void ComputeCumulativeSize(MPNode* r_ptr, std::vector<S>& cumVarR);
+    	CUDA_HOSTDEV void ComputeCumulativeSize(MPNode* r_ptr, std::vector<S>& cumVarR);
 
-        int FillTranslator();
+        CUDA_HOSTDEV int FillTranslator();
 
-    	size_t NumberOfRegionsTotal() const;
+    	CUDA_HOSTDEV size_t NumberOfRegionsTotal() const;
 
-    	size_t NumberOfRegionsWithParents() const;
+    	CUDA_HOSTDEV size_t NumberOfRegionsWithParents() const;
 
-        size_t NumberOfEdges() const;
+        CUDA_HOSTDEV size_t NumberOfEdges() const;
 
-        void UpdateEdge(T* lambdaBase, T* lambdaGlobal, int e, bool additiveUpdate);
+        CUDA_HOSTDEV void UpdateEdge(T* lambdaBase, T* lambdaGlobal, int e, bool additiveUpdate);
 
-        void CopyLambda(T* lambdaSrc, T* lambdaDst, size_t s_r_e) const;
+        CUDA_HOSTDEV void CopyLambda(T* lambdaSrc, T* lambdaDst, size_t s_r_e) const;
 
-        void CudaCopyLambda(T* lambdaSrc, T* lambdaDst, size_t s_r_e) const;
+    	CUDA_HOSTDEV void CopyMessagesForLocalFunction(T* lambdaSrc, T* lambdaDst, int r) const;
 
-    	void CopyMessagesForLocalFunction(T* lambdaSrc, T* lambdaDst, int r) const;
+        CUDA_HOSTDEV void ComputeLocalFunctionUpdate(T* lambdaBase, int r, T epsilon, T multiplier, bool additiveUpdate, FunctionUpdateWorkspaceID& w);
 
-        void ComputeLocalFunctionUpdate(T* lambdaBase, int r, T epsilon, T multiplier, bool additiveUpdate, FunctionUpdateWorkspaceID& w);
+    	CUDA_HOSTDEV void UpdateLocalFunction(T* lambdaBase, T* lambdaGlobal, int r, bool additiveUpdate);
 
-    	void UpdateLocalFunction(T* lambdaBase, T* lambdaGlobal, int r, bool additiveUpdate);
+    	CUDA_HOSTDEV void CopyMessagesForEdge(T* lambdaSrc, T* lambdaDst, int e) const;
 
-    	void CopyMessagesForEdge(T* lambdaSrc, T* lambdaDst, int e) const;
+        CUDA_HOSTDEV void CudaCopyMessagesForEdge(T* lambdaSrc, T* lambdaDst, int e) const ;
 
-        void CudaCopyMessagesForEdge(T* lambdaSrc, T* lambdaDst, int e) const 
+        CUDA_HOSTDEV void CopyMessagesForStar(T* lambdaSrc, T* lambdaDst, int r) const;
 
-        void CopyMessagesForStar(T* lambdaSrc, T* lambdaDst, int r) const;
+        CUDA_HOSTDEV void ReparameterizeEdge(T* lambdaBase, int e, T epsilon, bool additiveUpdate, REdgeWorkspaceID& wspace);
 
-        void ReparameterizeEdge(T* lambdaBase, int e, T epsilon, bool additiveUpdate, REdgeWorkspaceID& wspace);
+        CUDA_HOSTDEV T ComputeMu(T* lambdaBase, EdgeID* edge, S* indivVarStates, size_t numVarsOverlap, T epsilon, T* workspaceMem, S* MuIXMem);
 
-        T ComputeMu(T* lambdaBase, EdgeID* edge, S* indivVarStates, size_t numVarsOverlap, T epsilon, T* workspaceMem, S* MuIXMem);
+        CUDA_HOSTDEV void UpdateRegion(T* lambdaBase, T* lambdaGlobal, int r, bool additiveUpdate);
 
-        void UpdateRegion(T* lambdaBase, T* lambdaGlobal, int r, bool additiveUpdate);
+        CUDA_HOSTDEV void ReparameterizeRegion(T* lambdaBase, int r, T epsilon, bool additiveUpdate, RRegionWorkspaceID& wspace);
 
-        void ReparameterizeRegion(T* lambdaBase, int r, T epsilon, bool additiveUpdate, RRegionWorkspaceID& wspace);
+        CUDA_HOSTDEV T ComputeReparameterizationPotential(T* lambdaBase, const MPNode* const r_ptr, const S s_r) const;
 
-        T ComputeReparameterizationPotential(T* lambdaBase, const MPNode* const r_ptr, const S s_r) const;
+        CUDA_HOSTDEV T ComputeDual(T* lambdaBase, T epsilon, DualWorkspaceID& dw) const;
 
-        T ComputeDual(T* lambdaBase, T epsilon, DualWorkspaceID& dw) const;
+        CUDA_HOSTDEV size_t GetLambdaSize() const;
 
-        size_t GetLambdaSize() const;
+        CUDA_HOSTDEV void GradientUpdateEdge(T* lambdaBase, int e, T epsilon, T stepSize, bool additiveUpdate, GEdgeWorkspaceID& gew);
 
-        void GradientUpdateEdge(T* lambdaBase, int e, T epsilon, T stepSize, bool additiveUpdate, GEdgeWorkspaceID& gew);
+        CUDA_HOSTDEV void ComputeBeliefForRegion(MPNode* r_ptr, T* lambdaBase, T epsilon, T* mem, size_t s_r_e);
 
-        void ComputeBeliefForRegion(MPNode* r_ptr, T* lambdaBase, T epsilon, T* mem, size_t s_r_e);
+    	CUDA_HOSTDEV size_t ComputeBeliefs(T* lambdaBase, T epsilon, T** belPtr, bool OnlyUnaries);
 
-    	size_t ComputeBeliefs(T* lambdaBase, T epsilon, T** belPtr, bool OnlyUnaries);
+        CUDA_HOSTDEV void Marginalize(T* curBel, T* oldBel, EdgeID* edge, const std::vector<S>& indivVarStates, T& marg_new, T& marg_old);
 
-        void Marginalize(T* curBel, T* oldBel, EdgeID* edge, const std::vector<S>& indivVarStates, T& marg_new, T& marg_old);
+    	CUDA_HOSTDEV T ComputeImprovement(T* curBel, T* oldBel);
 
-    	T ComputeImprovement(T* curBel, T* oldBel);
-
-    	void DeleteBeliefs();
+    	CUDA_HOSTDEV void DeleteBeliefs();
 
 };
 
@@ -270,6 +274,8 @@ class ThreadSync {
         virtual ~ThreadSync();
 
         bool checkSync();
+
+        bool cudaCheckSync();
 
         void interruptFunc();
 
@@ -337,6 +343,20 @@ public:
 
 template class AsyncRMPThread<float, int>;
 template class AsyncRMPThread<double, int>;
+
+template <typename T, typename S>
+class CudaAsyncRMPThread {
+	thrust::host_vector<T> hostLambdaGlobal;
+    thrust::device_vector<T> devLambdaGlobal;
+public:
+
+    int CudaRunMP(MPGraph<T, S>& g, T epsilon, int numIterations, int numThreads, int WaitTimeInMS);
+
+    size_t GetBeliefs(MPGraph<T, S>& g, T epsilon, T** belPtr, bool OnlyUnaries);
+};
+
+template class CudaAsyncRMPThread<float, int>;
+template class CudaAsyncRMPThread<double, int>;
 
 template <typename T, typename S>
 class RMP
