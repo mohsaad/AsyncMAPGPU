@@ -1,140 +1,178 @@
 #include "Region.h"
 #include <cuda.h>
 
-
+// our kernel for edge updates
+// parameters:
+// g: graph
+// epsilon: epsilon
+// numThreadUpdates: number of updates in each thread
+// lambdaGlobal: global lambda array
+// runFlag: a flag that controls when we want to terminate the array
+// rangeRandNums: random numbers (defined by the graph)
 template<typename T, typename S>
-T* MPGraph<T,S>::CudaGetMaxMemComputeMu(T epsilon) const {
-    size_t maxMem = 0;
-    for (typename std::vector<EdgeID*>::const_iterator e = Edges.begin(), e_e = Edges.end(); e != e_e; ++e) {
-        EdgeID* edge = *e;
-        size_t s_p_e = edge->newVarSize;
-        MPNode* p_ptr = edge->parentPtr->node;
-
-        T ecp = epsilon*p_ptr->c_r;
-        if (ecp != T(0)) {
-            maxMem = (s_p_e > maxMem) ? s_p_e : maxMem;
-        }
-    }
-
-
-    T* deviceMem;
-    if(maxMem > 0)
-    {
-        cudaMalloc((void**)deviceMem, maxMem * sizeof(T));
-    }
-    else
-    {
-        deviceMem = NULL;
-    }
-
-    return deviceMem;
-}
-
-
-template<typename T, typename S>
-S* MPGraph<T,S>::CudaGetMaxMemComputeMuIXVar() const {
-    size_t maxMem = 0;
-    for (size_t r = 0; r < ValidRegionMapping.size(); ++r) {
-        MPNode* r_ptr = Graph[ValidRegionMapping[r]];
-        for (typename std::vector<MsgContainer>::const_iterator p = r_ptr->Parents.begin(), p_e = r_ptr->Parents.end(); p != p_e; ++p) {
-            size_t tmp = p->edge->newVarIX.size();
-            maxMem = (tmp>maxMem) ? tmp : maxMem;
-        }
-    }
-
-    S* deviceMem;
-    if(maxMem > 0)
-    {
-        cudaMalloc((void**)deviceMem, maxMem * sizeof(S));
-    }
-    else
-    {
-        deviceMem = NULL;
-    }
-
-    return deviceMem;
-}
-
-
-
-/*
-    So what we'll do here is allocate a bunch of arrays on the device, but return a struct on the host containing all those pointers.
-*/
-template<typename T, typename S>
-__host__ const typename MPGraph<T,S>::REdgeWorkspaceID MPGraph<T,S>::CudaAllocateReparameterizeEdgeWorkspaceMem(T epsilon) const {
-    size_t maxIXMem = 0;
-    for(typename std::vector<EdgeID*>::const_iterator eb=Edges.begin(), eb_e=Edges.end();eb!=eb_e;++eb) {
-        MPNode* r_ptr = (*eb)->childPtr->node;
-        size_t rNumVar = r_ptr->varIX.size();
-        maxIXMem = (rNumVar>maxIXMem) ? rNumVar : maxIXMem;
-    }
-
-    S* deviceIXMem;
-    if(maxIXMem > 0)
-    {
-        cudaMalloc((void**)deviceIXMem, maxIXMem * sizeof(S));
-    }
-    else
-    {
-        deviceIXMem = NULL;
-    }
-
-
-
-    return REdgeWorkspaceID{ CudaGetMaxMemComputeMu(epsilon), CudaGetMaxMemComputeMuIXVar(), deviceIXMem };
-}
-
-/*
-    Deallocation function for GPU pointers.
-*/
-
-template<typename T, typename S>
-__host__ void MPGraph<T,S>::CudaDeAllocateReparameterizeEdgeWorkspaceMem(REdgeWorkspaceID& w) const {
-    cudaFree(w.MuMem);
-    cudaFree(w.MuIXMem);
-    cudaFree(w.IXMem);
-    w.MuMem = NULL;
-    w.MuIXMem = NULL;
-    w.IXMem = NULL;
-}
-
-
-template<typename T, typename S>
-__device__ void MPGraph<T,S>::CudaCopyLambda(T* lambdaSrc, T* lambdaDst, size_t s_r_e) const
+__global__ void EdgeUpdateKernel(MPGraph<T, S>* g, T epsilon, size_t* numThreadUpdates, T* lambdaGlobal, int* runFlag, int numThreads)
 {
-    for (T* ptr_e = lambdaSrc + s_r_e; ptr_e != lambdaSrc;) {
-        *lambdaDst++ = *lambdaSrc++;
+    int tx = threadIdx.x + blockIdx.x * blockDim.x;
+    if(tx < numThreads)
+    {
+        int uid;
+        curandState_t* state = NULL;
+        curand_init(0,0,0,state);
+        int rangeRandNums = g->NumberOfEdges() - 1;
+
+        // allocate space for edge workspace
+        typename MPGraph<T, S>::REdgeWorkspaceID rew;
+        g->AllocateReparameterizeEdgeWorkspaceMem(epsilon);
+
+        // allocate an array that will act as our base
+        size_t msgSize = g->GetLambdaSize();
+        T* devLambdaBase = (T*)malloc(msgSize * sizeof(T));
+        memset(devLambdaBase, T(0), sizeof(T) * msgSize);
+
+
+
+        while(*runFlag == 0)
+        {
+            uid = floorf(curand_uniform(state) * rangeRandNums);
+            g->CopyMessagesForEdge(lambdaGlobal, devLambdaBase, uid);
+            g->ReparameterizeEdge(devLambdaBase, uid, epsilon, false, rew);
+            g->UpdateEdge(devLambdaBase, lambdaGlobal, uid, false);
+
+            numThreadUpdates[tx]++;
+            __syncthreads();
+        }
+
+        // free device pointers
+        g->DeAllocateReparameterizeEdgeWorkspaceMem(rew);
+        free(devLambdaBase);
+
+        atomicAdd(runFlag, numThreads);
+
     }
+
 }
 
 template<typename T, typename S>
-void MPGraph<T,S>::CudaCopyMessagesForEdge(T* lambdaSrc, T* lambdaDst, int e) const {
-    EdgeID* edge = Edges[e];
-    MPNode* r_ptr = edge->childPtr->node;
-    MPNode* p_ptr = edge->parentPtr->node;
+int CudaAsyncRMPThread<T,S>::CudaRunMP(MPGraph<T, S>& g, T epsilon, int numIterations, int numThreads, int WaitTimeInMS) {
 
-    size_t s_r_e = r_ptr->GetPotentialSize();
-    size_t s_p_e = p_ptr->GetPotentialSize();
 
-    
+    size_t msgSize = g.GetLambdaSize();
 
-    for (typename std::vector<MsgContainer>::const_iterator pn = r_ptr->Parents.begin(), pn_e = r_ptr->Parents.end(); pn != pn_e; ++pn) {
-        CopyLambda(lambdaSrc + pn->lambda, lambdaDst + pn->lambda, s_r_e);
+
+    std::cout << "Num threads " << numThreads << std::endl;
+
+    // handle this case later.
+    if (msgSize == 0) {
+        typename MPGraph<T, S>::DualWorkspaceID dw = g.AllocateDualWorkspaceMem(epsilon);
+        std::cout << "0: " << g.ComputeDual(NULL, epsilon, dw) << std::endl;
+        g.DeAllocateDualWorkspaceMem(dw);
+        return 0;
     }
 
-    for (typename std::vector<MsgContainer>::const_iterator cn = r_ptr->Children.begin(), cn_e = r_ptr->Children.end(); cn != cn_e; ++cn) {
-        size_t s_r_c = cn->node->GetPotentialSize();
-        CopyLambda(lambdaSrc + cn->lambda, lambdaDst + cn->lambda, s_r_c);
+    std::cout << std::setprecision(std::numeric_limits<long double>::digits10 + 1);
+
+
+
+
+
+    // allocate device pointers for lambda global
+    T* devLambdaGlobal = NULL;
+    cudaMalloc((void**)devLambdaGlobal, sizeof(T) * msgSize);
+    cudaMemset((void**)devLambdaGlobal, T(0), sizeof(T)*msgSize);
+
+
+    // allocate on host memory for cuda streaming
+    T* lambdaGlob = NULL;
+    cudaMallocHost((void**)lambdaGlob, sizeof(T)*msgSize);
+    cudaMemset(lambdaGlob, T(0), sizeof(T)*msgSize);
+
+
+
+    // allocate space and copy graph to GPU
+    MPGraph<T,S>* gPtr = NULL;
+    cudaMalloc((void**)gPtr, sizeof(&g));
+    cudaMemcpy(gPtr, &g, sizeof(&g), cudaMemcpyHostToDevice);
+
+    // initialize the number of region updates
+    size_t* numThreadUpdates = NULL;
+    size_t* hostThreadUpdates = new size_t[numThreads];
+    cudaMalloc((void**)numThreadUpdates, numThreads * sizeof(size_t));
+    cudaMemset((void**)numThreadUpdates, 0, numThreads * sizeof(size_t));
+
+    // allocate run flag
+    int* devRunFlag = NULL;
+    cudaMalloc((void**)devRunFlag, sizeof(int));
+    cudaMemset((void**)devRunFlag, 0, sizeof(int));
+
+    // create an asynchronous cuda stream
+    // we only have two streams, the main (CPU) stream, and the GPU one
+    // CPU stream only copies back every so often (or writes to the GPU)
+    // GPU is executing
+    cudaStream_t streamCopy, streamExec;
+    cudaStreamCreate(&streamCopy);
+    cudaStreamCreate(&streamExec);
+
+
+    // create a ThreadSync object (not necessary at all, but hey, I wanna
+    // make sure this actually works)
+    ThreadSync<T, S> sy(numThreads, lambdaGlob, epsilon, &g);
+
+    // grid/block dimensions
+    dim3 DimGrid(1,1,1);
+    dim3 DimBlock(32,1,1);
+    int stopFlag = 1;
+
+    std::cout << "Executing kernel..." << std::endl;
+
+
+    //CTmr.start();
+    // start the kernel
+    EdgeUpdateKernel<<<DimGrid, DimBlock, 0, streamExec>>>(gPtr, epsilon, numThreadUpdates, devLambdaGlobal, devRunFlag, numThreads);
+    cudaDeviceSynchronize();
+
+
+    for (int k = 0; k < numIterations; ++k)
+    {
+        std::this_thread::sleep_for(std::chrono::milliseconds(WaitTimeInMS));
+        cudaMemcpyAsync(lambdaGlob, devLambdaGlobal, sizeof(T)*msgSize, cudaMemcpyDeviceToHost, streamCopy);
+        // std::cout << "line 227" << std::endl;
+        // sy.ComputeDualNoSync();
+        // std::cout << "line 229" << std::endl;
+    }
+    cudaMemcpyAsync(devRunFlag, &stopFlag, sizeof(int), cudaMemcpyHostToDevice, streamCopy);
+    cudaDeviceSynchronize();
+    // now, we can block
+    cudaMemcpy(hostThreadUpdates, numThreadUpdates, sizeof(size_t)*numThreads, cudaMemcpyDeviceToHost);
+    //CTmr.stop();
+
+    cudaMemcpy(&stopFlag, devRunFlag, sizeof(int), cudaMemcpyDeviceToHost);
+    if(stopFlag == 1)
+    {
+        std::cout << "Kernel Terminated" << std::endl;
     }
 
-    for (typename std::vector<MsgContainer>::const_iterator p_hat = p_ptr->Parents.begin(), p_hat_e = p_ptr->Parents.end(); p_hat != p_hat_e; ++p_hat) {
-        CopyLambda(lambdaSrc + p_hat->lambda, lambdaDst + p_hat->lambda, s_p_e);
+    size_t regionUpdates = 0;
+    for(int k=0;k<numThreads;++k) {
+        size_t tmp = hostThreadUpdates[k];
+        std::cout << "Thread " << k << ": " << tmp << std::endl;
+        regionUpdates += tmp;
     }
 
-    for (typename std::vector<MsgContainer>::const_iterator c_hat = p_ptr->Children.begin(), c_hat_e = p_ptr->Children.end(); c_hat != c_hat_e; ++c_hat) {
-        if (c_hat->node != r_ptr) {
-            size_t s_r_pc = c_hat->node->GetPotentialSize();
-            CopyLambda(lambdaSrc + c_hat->lambda, lambdaDst + c_hat->lambda, s_r_pc);
-        }
-    }
+    cudaFree(gPtr);
+    cudaFreeHost(lambdaGlob);
+    cudaFree(devRunFlag);
+    cudaFree(devLambdaGlobal);
+    cudaFreeHost(lambdaGlob);
+    delete [] hostThreadUpdates;
+    cudaStreamDestroy(streamCopy);
+    cudaStreamDestroy(streamExec);
+
+    cudaDeviceReset();
+
+    std::cout << "Region updates: " << regionUpdates << std::endl;
+    std::cout << "Total regions:  " << g.NumberOfRegionsWithParents() << std::endl;
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+    std::cout << "Terminating program." << std::endl;
+    return 0;
 }

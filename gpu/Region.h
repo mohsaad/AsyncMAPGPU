@@ -22,6 +22,8 @@
 #include <thrust/host_vector.h>
 #include <thrust/device_vector.h>
 
+// curand
+#include <curand_kernel.h>
 
 #include "CPrecisionTimer.h"
 
@@ -167,11 +169,11 @@ class MPGraph
 
     	CUDA_HOSTDEV T* GetMaxMemComputeMu(T epsilon) const;
 
-        CUDA_HOSTDEV T* CudaGetMaxMemComputeMu(T epsilon) const;
+        T* CudaGetMaxMemComputeMu(T epsilon) const;
 
         CUDA_HOSTDEV S* GetMaxMemComputeMuIXVar() const;
 
-        CUDA_HOSTDEV S* CudaGetMaxMemComputeMuIXVar() const;
+        S* CudaGetMaxMemComputeMuIXVar() const;
 
         CUDA_HOSTDEV const RRegionWorkspaceID AllocateReparameterizeRegionWorkspaceMem(T epsilon) const;
 
@@ -179,11 +181,11 @@ class MPGraph
 
     	CUDA_HOSTDEV const REdgeWorkspaceID AllocateReparameterizeEdgeWorkspaceMem(T epsilon) const;
 
-        CUDA_HOSTDEV const REdgeWorkspaceID CudaAllocateReparameterizeEdgeWorkspaceMem(T epsilon) const;
+        const REdgeWorkspaceID CudaAllocateReparameterizeEdgeWorkspaceMem(T epsilon) const;
 
     	CUDA_HOSTDEV void DeAllocateReparameterizeEdgeWorkspaceMem(REdgeWorkspaceID& w) const;
 
-        CUDA_HOSTDEV void CudaDeAllocateReparameterizeEdgeWorkspaceMem(REdgeWorkspaceID& w) const;
+        void CudaDeAllocateReparameterizeEdgeWorkspaceMem(REdgeWorkspaceID& w) const;
 
         CUDA_HOSTDEV const GEdgeWorkspaceID AllocateGradientEdgeWorkspaceMem() const;
 
@@ -217,7 +219,7 @@ class MPGraph
 
     	CUDA_HOSTDEV void CopyMessagesForEdge(T* lambdaSrc, T* lambdaDst, int e) const;
 
-        CUDA_HOSTDEV void CudaCopyMessagesForEdge(T* lambdaSrc, T* lambdaDst, int e) const ;
+        //void CudaCopyMessagesForEdge(T* lambdaSrc, T* lambdaDst, int e) const ;
 
         CUDA_HOSTDEV void CopyMessagesForStar(T* lambdaSrc, T* lambdaDst, int r) const;
 
@@ -247,6 +249,8 @@ class MPGraph
 
     	CUDA_HOSTDEV void DeleteBeliefs();
 
+
+
 };
 
 template class MPGraph<float, int>;
@@ -275,6 +279,10 @@ class ThreadSync {
 
         bool checkSync();
 
+        void startTimer();
+
+        double stopTimer();
+
         bool cudaCheckSync();
 
         void interruptFunc();
@@ -282,6 +290,8 @@ class ThreadSync {
         void terminateFunc();
 
         void ComputeDualNoSync();
+
+        void CudaComputeDualNoSync();
 
         bool startFunc();
 
@@ -347,10 +357,10 @@ template class AsyncRMPThread<double, int>;
 template <typename T, typename S>
 class CudaAsyncRMPThread {
 	thrust::host_vector<T> hostLambdaGlobal;
-    thrust::device_vector<T> devLambdaGlobal;
 public:
 
     int CudaRunMP(MPGraph<T, S>& g, T epsilon, int numIterations, int numThreads, int WaitTimeInMS);
+
 
     size_t GetBeliefs(MPGraph<T, S>& g, T epsilon, T** belPtr, bool OnlyUnaries);
 };

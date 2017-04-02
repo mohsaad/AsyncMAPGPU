@@ -426,7 +426,7 @@ void MPGraph<T,S>::UpdateLocalFunction(T* lambdaBase, T* lambdaGlobal, int r, bo
             size_t s_r_c = cn->node->GetPotentialSize();
             for(size_t s_c = 0; s_c != s_r_c; ++s_c) {
                 lambdaGlobal[cn->lambda + s_c] += lambdaBase[cn->lambda + s_c];
-            }cc
+            }
         }
     } else {
         assert(false);
@@ -952,6 +952,7 @@ ThreadSync<T,S>::~ThreadSync() {
 
 template<typename T, typename S>
 bool ThreadSync<T,S>::checkSync() {
+    //std::cout << state << std::endl;
     if (unlikely(state == INTR)) {
         std::unique_lock<std::mutex> lock(mtx);
         if (currentlyStoppedThreads < numThreads - 1) {
@@ -1012,8 +1013,22 @@ void ThreadSync<T,S>::terminateFunc() {
 
 template<typename T, typename S>
 void ThreadSync<T,S>::ComputeDualNoSync() {
+    std::cout << "line 1016" << std::endl;
     double timeMS = CTmr.Stop()*1000.;
+    std::cout << "line 1018" << std::endl;
     std::copy(lambdaGlobal, lambdaGlobal+LambdaForNoSync.size(), &LambdaForNoSync[0]);
+    std::cout << "line 1020" << std::endl;
+    T dualVal = g->ComputeDual(&LambdaForNoSync[0], epsilon, dw);
+    std::cout << timeMS <<"; " << CTmr1.Stop()*1000. << "; " << dualVal << std::endl;
+}
+
+template<typename T, typename S>
+void ThreadSync<T,S>::CudaComputeDualNoSync() {
+    std::cout << "line 1016" << std::endl;
+    double timeMS = CTmr.Stop()*1000.;
+    std::cout << "line 1018" << std::endl;
+    std::copy(lambdaGlobal, lambdaGlobal+LambdaForNoSync.size(), &LambdaForNoSync[0]);
+    std::cout << "line 1020" << std::endl;
     T dualVal = g->ComputeDual(&LambdaForNoSync[0], epsilon, dw);
     std::cout << timeMS <<"; " << CTmr1.Stop()*1000. << "; " << dualVal << std::endl;
 }
@@ -1049,8 +1064,6 @@ ThreadWorker<T,S>::ThreadWorker(ThreadSync<T, S>* ts, MPGraph<T, S>* g, T epsilo
         rrw = g->AllocateReparameterizeRegionWorkspaceMem(epsilon);
         uid = new std::uniform_int_distribution<int>(0, g->NumberOfRegionsWithParents() - 1);
     #elif WHICH_FUNC==2
-    	rew = g->CudaAllocateReparameterizeEdgeWorkspaceMem(epsilon);
-    	g->CudaDeAllocateReparameterizeEdgeWorkspaceMem(rew);
         rew = g->AllocateReparameterizeEdgeWorkspaceMem(epsilon);
         uid = new std::uniform_int_distribution<int>(0, g->NumberOfEdges() - 1);
     #elif WHICH_FUNC==3
@@ -1094,7 +1107,8 @@ size_t ThreadWorker<T,S>::GetCount() {
 template<typename T, typename S>
 void ThreadWorker<T,S>::run() {
     std::cout << "Thread started" << std::endl;
-
+    int test = 0;
+    // ts->startFunc();
     while (ts->checkSync()) {
 
         #if WHICH_FUNC==1
@@ -1102,8 +1116,6 @@ void ThreadWorker<T,S>::run() {
                 g->CopyMessagesForStar(lambdaGlobal, lambdaBase, ix);
                 g->ReparameterizeRegion(lambdaBase, ix, epsilon, false, rrw);
                 g->UpdateRegion(lambdaBase, lambdaGlobal, ix, false);
-
-
         #elif WHICH_FUNC==2
                 int ix = (*uid)(eng);
                 g->CopyMessagesForEdge(lambdaGlobal, lambdaBase, ix);
@@ -1137,6 +1149,9 @@ int AsyncRMPThread<T,S>::RunMP(MPGraph<T, S>& g, T epsilon, int numIterations, i
     lambdaGlobal.assign(msgSize, T(0));
     T* lambdaGlob = &lambdaGlobal[0];
 
+
+    // thread syncs are dumb - they're used for keeping track of
+    // the state of each thread, which is just totally unncessary.
     ThreadSync<T, S> sy(numThreads, lambdaGlob, epsilon, &g);
 
     T stepsize = -0.1;
@@ -1151,7 +1166,8 @@ int AsyncRMPThread<T,S>::RunMP(MPGraph<T, S>& g, T epsilon, int numIterations, i
     while (!sy.startFunc()) {
         std::this_thread::sleep_for(std::chrono::milliseconds(1000));
     }
-    for (int k = 0; k < numIterations; ++k) {
+    for (int k = 0; k < numIterations; ++k)
+    {
         std::this_thread::sleep_for(std::chrono::milliseconds(WaitTimeInMS));
         //sy.interruptFunc();
         sy.ComputeDualNoSync();

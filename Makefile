@@ -43,5 +43,5 @@ gpuTestAsyncRMP: testAsyncRMP/testGPUAsyncRMP.cpp gpu/Region.h
 	$(NVCC) $(NVLIBFLAGS) gpu/Region.cu -o bin/cudaRegion.o $(NVFLAGS)
 	$(NVCC) $(NVLIBFLAGS) gpu/Region.cpp -o bin/Region.o $(NVFLAGS)
 	$(NVCC) $(NVLIBFLAGS) testAsyncRMP/testGPUAsyncRMP.cpp -o bin/gpuTestAsync.o $(NVFLAGS)
-	$(NVCC) bin/gpuTestAsync.o bin/cudaRegion.o bin/Region.o -o bin/gpuTestAsyncRMP
+	$(NVCC) bin/gpuTestAsync.o bin/cudaRegion.o bin/Region.o -o bin/gpuTestAsyncRMP $(NVFLAGS)
 	# $(CC) $(CUDAFLAGS) testAsyncRMP/testGPUAsyncRMP.cpp  gpu/Region.cpp bin/cudaRegion.o -o bin/gpuTestAsyncRMP $(CFLAGS) $(LFLAGS) $(LLIBS) $(OPTS)
