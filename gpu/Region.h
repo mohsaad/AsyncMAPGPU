@@ -42,6 +42,16 @@
 #define CUDA_HOSTDEV
 #endif
 
+#define gpuErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
+inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=true)
+{
+   if (code != cudaSuccess)
+   {
+      fprintf(stderr,"GPUassert: %s %s %d\n", cudaGetErrorString(code), file, line);
+      if (abort) exit(code);
+   }
+}
+
 
 #define BLOCK_SIZE 256
 /*
@@ -149,9 +159,9 @@ class MPGraph
 
 
     public:
-        MPGraph();
+        CUDA_HOSTDEV MPGraph();
 
-        virtual ~MPGraph();
+        CUDA_HOSTDEV virtual ~MPGraph();
 
         CUDA_HOSTDEV int AddVariables(const std::vector<S>& card);
 
