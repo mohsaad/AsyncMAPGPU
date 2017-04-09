@@ -52,6 +52,9 @@ __global__ void EdgeUpdateKernel(MPGraph<T, S> g, T epsilon, size_t* numThreadUp
 
 }
 
+
+
+
 template<typename T, typename S>
 int CudaAsyncRMPThread<T,S>::CudaRunMP(MPGraph<T, S>& g, T epsilon, int numIterations, int numThreads, int WaitTimeInMS) {
 

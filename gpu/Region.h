@@ -157,6 +157,72 @@ class MPGraph
     	};
     	std::vector<EdgeID*> Edges;
 
+	// GPU versions
+	class GpuRegion
+	{
+		public:
+			T c_r;
+			T* pot;
+			S potSize;
+			void* tmp;
+			S* varIX;
+            size_t varIXsize;
+
+
+			GpuRegion(T c_r, T* pot, S potSize, S* varIX, size_t varIXsize) : c_r(c_r), pot(pot), potSize(potSize), tmp(NULL), varIX(varIX), varIXsize(varIXsize)
+			{
+
+			};
+
+			virtual ~GpuRegion()
+			{
+
+			};
+
+			S GetPotentialSize()
+			{
+				return potSize;
+			};
+	};
+
+        //
+    struct GpuMPNode;
+    struct GpuEdgeID;
+
+    struct GpuMsgContainer {
+        size_t lambda;
+    	struct GpuMPNode* node;
+    	struct GpuEdgeID* edge;
+    	thrust::host_vector<S> Translator;
+    	GpuMsgContainer(size_t l, GpuMPNode* n, GpuEdgeID* e, const thrust::host_vector<S>& Trans) : lambda(l), node(n), edge(e), Translator(Trans) {};
+    };
+
+    	struct GpuMPNode : public GpuRegion {
+    		GpuMPNode(T c_r, S* varIX, T* pot, S potSize, size_t varIXsize) : GpuRegion(c_r, pot, potSize, varIX, varIXsize) {};
+            GpuMsgContainer* GpuParents;
+            GpuMsgContainer* GpuChildren;
+    	};
+
+
+    	thrust::host_vector<S> GpuCardinalities;
+    	thrust::host_vector<GpuMPNode*> GpuGraph;
+    	thrust::host_vector<size_t> GpuValidRegionMapping;
+    	thrust::host_vector<PotentialVector> GpuPotentials;
+
+    	struct GpuEdgeID {
+    		GpuMsgContainer* parentPtr;
+    		GpuMsgContainer* childPtr;
+    		thrust::host_vector<S> rStateMultipliers;//cumulative size of parent region variables that overlap with child region (r)
+    		thrust::host_vector<S> newVarStateMultipliers;//cumulative size of parent region variables that are unique to parent region
+    		//std::vector<S> newVarCumSize;//cumulative size of new variables
+    		thrust::host_vector<S> newVarIX;//variable indices of new variables
+    		S newVarSize;
+    	};
+    	thrust::host_vector<GpuEdgeID*> GpuEdges;
+
+
+
+
 
     public:
         CUDA_HOSTDEV MPGraph();
@@ -258,6 +324,12 @@ class MPGraph
     	CUDA_HOSTDEV T ComputeImprovement(T* curBel, T* oldBel);
 
     	CUDA_HOSTDEV void DeleteBeliefs();
+
+    private:
+
+        void AllocateNewGPUNode(T c_r, const std::vector<S>& varIX, T* pot, S potSize);
+
+        bool DeallocateGpuNode(GpuMPNode* node);
 
 
 

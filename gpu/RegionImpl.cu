@@ -17,11 +17,55 @@ MPGraph<T,S>::~MPGraph() {
         EdgeID* e_ptr = *e;
         delete e_ptr;
     }
+
+
 }
+
+
+// kind of a function to replace the allocated memories for MPNode
+template<typename T, typename S>
+void MPGraph<T,S>::AllocateNewGPUNode(T c_r, const std::vector<S>& varIX, T* pot, S potSize)
+{
+    // allocate the node
+    GpuMPNode* node;
+    gpuErrchk(cudaMalloc((void**)&node, sizeof(GpuMPNode)));
+
+    // copy over c_r
+    gpuErrchk(cudaMemcpy(&(node->c_r), &c_r, sizeof(T), cudaMemcpyHostToDevice));
+
+    // malloc a device array of size T*
+    T* devicePot;
+    gpuErrchk(cudaMalloc((void**)&devicePot, sizeof(T)*potSize));
+    gpuErrchk(cudaMemcpy(devicePot, pot, sizeof(T)*potSize, cudaMemcpyHostToDevice));
+    gpuErrchk(cudaMemcpy(&(node->pot), &devicePot, sizeof(T*), cudaMemcpyHostToDevice));
+
+
+    // copy over potSize
+    gpuErrchk(cudaMemcpy(&(node->potSize), &potSize, sizeof(S), cudaMemcpyHostToDevice));
+
+    // copy over length of varIX
+    size_t varIXsize = varIX.size();
+    gpuErrchk(cudaMemcpy(&(node->varIXsize), &varIXsize, sizeof(size_t), cudaMemcpyHostToDevice));
+
+    // now copy each individual S value from the vector
+    // first malloc an array for it
+    S* varIXarr;
+    gpuErrchk(cudaMalloc((void**)&varIXsize, sizeof(S) * varIXsize));
+
+    // copy
+    gpuErrchk(cudaMemcpy(varIXarr, &(varIX[0]), sizeof(S)*varIXsize, cudaMemcpyHostToDevice));
+    gpuErrchk(cudaMemcpy(&(node->varIX), &varIXarr, sizeof(S*), cudaMemcpyHostToDevice));
+
+    GpuGraph.push_back(node);
+
+}
+
 
 template<typename T, typename S>
 int MPGraph<T,S>::AddVariables(const std::vector<S>& card) {
     Cardinalities = card;
+
+
     return 0;
 }
 
@@ -29,6 +73,12 @@ template<typename T, typename S>
 const typename MPGraph<T,S>::PotentialID MPGraph<T,S>::AddPotential(const typename MPGraph<T,S>::PotentialVector& potVals) {
     S PotID = S(Potentials.size());
     Potentials.push_back(potVals);
+
+
+    //
+    // // also push back on GPU
+    // GpuPotentials.push_back(potVals);
+
     return typename MPGraph<T,S>::PotentialID{ PotID };
 }
 
@@ -36,6 +86,18 @@ template<typename T, typename S>
 const typename MPGraph<T,S>::RegionID MPGraph<T,S>::AddRegion(T c_r, const std::vector<S>& varIX, const typename MPGraph<T,S>::PotentialID& p) {
     S RegID = S(Graph.size());
     Graph.push_back(new MPNode(c_r, varIX, Potentials[p.PotID].data, Potentials[p.PotID].size));
+
+    AllocateNewGPUNode(c_r, varIX, Potentials[p.PotID].data, Potentials[p.PotID].size);
+
+    // // create a GPU node
+    // GpuMPNode* test;
+    // gpuAssert(cudaMalloc((void**)&test, sizeof(GpuMPNode));
+    // // copy c_r
+    // gpuAssert(cudaMemcpy(test->c_r, c_r, sizeof(T), cudaMemcpyHostToDevice));
+
+    // copy varIx
+
+
     return typename MPGraph<T,S>::RegionID{ RegID };
 }
 
