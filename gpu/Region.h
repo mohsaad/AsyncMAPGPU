@@ -193,14 +193,19 @@ class MPGraph
         size_t lambda;
     	struct GpuMPNode* node;
     	struct GpuEdgeID* edge;
-    	thrust::host_vector<S> Translator;
-    	GpuMsgContainer(size_t l, GpuMPNode* n, GpuEdgeID* e, const thrust::host_vector<S>& Trans) : lambda(l), node(n), edge(e), Translator(Trans) {};
+    	S* Translator;
+    	GpuMsgContainer(size_t l, GpuMPNode* n, GpuEdgeID* e, const S*& Trans) : lambda(l), node(n), edge(e), Translator(Trans) {};
     };
 
     	struct GpuMPNode : public GpuRegion {
     		GpuMPNode(T c_r, S* varIX, T* pot, S potSize, size_t varIXsize) : GpuRegion(c_r, pot, potSize, varIX, varIXsize) {};
+
             GpuMsgContainer* GpuParents;
             GpuMsgContainer* GpuChildren;
+
+            GpuMsgContainer* tmpParents;
+            GpuMsgContainer* tmpChildren;
+
     	};
 
 
@@ -209,18 +214,25 @@ class MPGraph
     	thrust::host_vector<size_t> GpuValidRegionMapping;
     	thrust::host_vector<PotentialVector> GpuPotentials;
 
+        // all device pointers
+        S* deviceCardinalities;
+        GpuMPNode* deviceGraph;
+        size_t* deviceValidRegionMapping;
+        PotentialVector* devicePotentials;
+
     	struct GpuEdgeID {
     		GpuMsgContainer* parentPtr;
     		GpuMsgContainer* childPtr;
-    		thrust::host_vector<S> rStateMultipliers;//cumulative size of parent region variables that overlap with child region (r)
-    		thrust::host_vector<S> newVarStateMultipliers;//cumulative size of parent region variables that are unique to parent region
+    		S* rStateMultipliers;//cumulative size of parent region variables that overlap with child region (r)
+    		S* newVarStateMultipliers;//cumulative size of parent region variables that are unique to parent region
     		//std::vector<S> newVarCumSize;//cumulative size of new variables
-    		thrust::host_vector<S> newVarIX;//variable indices of new variables
+    		S* newVarIX;//variable indices of new variables
     		S newVarSize;
     	};
     	thrust::host_vector<GpuEdgeID*> GpuEdges;
+        GpuEdgeID* deviceEdges;
 
-
+        std::map<MPNode*, size_t> parentChildMap;
 
 
 
@@ -330,6 +342,8 @@ class MPGraph
         void AllocateNewGPUNode(T c_r, const std::vector<S>& varIX, T* pot, S potSize);
 
         bool DeallocateGpuNode(GpuMPNode* node);
+
+        void setupDeviceVariables();
 
 
 
