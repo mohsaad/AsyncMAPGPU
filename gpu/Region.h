@@ -162,6 +162,7 @@ class MPGraph
 	{
 		public:
 			T c_r;
+            T sum_c_r_c_p;
 			T* pot;
 			S potSize;
 			void* tmp;
@@ -194,7 +195,7 @@ class MPGraph
     	struct GpuMPNode* node;
     	struct GpuEdgeID* edge;
     	S* Translator;
-    	GpuMsgContainer(size_t l, GpuMPNode* n, GpuEdgeID* e, const S*& Trans) : lambda(l), node(n), edge(e), Translator(Trans) {};
+    	GpuMsgContainer(size_t l, GpuMPNode* n, GpuEdgeID* e, S* Trans) : lambda(l), node(n), edge(e), Translator(Trans) {};
     };
 
     	struct GpuMPNode : public GpuRegion {
@@ -203,11 +204,12 @@ class MPGraph
             GpuMsgContainer* GpuParents;
             GpuMsgContainer* GpuChildren;
 
-            GpuMsgContainer* tmpParents;
-            GpuMsgContainer* tmpChildren;
 
     	};
 
+        // hack to get around the whole "no declared vectors in derive"
+        std::map<GpuMPNode*, std::vector<GpuMsgContainer*>> nodeParents;
+        std::map<GpuMPNode*, std::vector<GpuMsgContainer*>> nodeChildren;
 
     	thrust::host_vector<S> GpuCardinalities;
     	thrust::host_vector<GpuMPNode*> GpuGraph;
@@ -232,118 +234,129 @@ class MPGraph
     	thrust::host_vector<GpuEdgeID*> GpuEdges;
         GpuEdgeID* deviceEdges;
 
-        std::map<MPNode*, size_t> parentChildMap;
+        std::map<MPNode*, GpuMPNode*> CpuGpuMap;
+        std::map<EdgeID*, GpuEdgeID*> CpuGpuEdgeMap;
+        std::map<MsgContainer*, GpuMsgContainer*> CpuGpuMsgMap;
 
+
+        std::map<EdgeID*, size_t> EdgeIDMap;
 
 
     public:
-        CUDA_HOSTDEV MPGraph();
+        MPGraph();
 
-        CUDA_HOSTDEV virtual ~MPGraph();
+        virtual ~MPGraph();
 
-        CUDA_HOSTDEV int AddVariables(const std::vector<S>& card);
+        int AddVariables(const std::vector<S>& card);
 
-        CUDA_HOSTDEV const PotentialID AddPotential(const PotentialVector& potVals);
+        const PotentialID AddPotential(const PotentialVector& potVals);
 
-        CUDA_HOSTDEV const RegionID AddRegion(T c_r, const std::vector<S>& varIX, const PotentialID& p);
+        const RegionID AddRegion(T c_r, const std::vector<S>& varIX, const PotentialID& p);
 
-        CUDA_HOSTDEV int AddConnection(const RegionID& child, const RegionID& parent);
+        int AddConnection(const RegionID& child, const RegionID& parent);
 
-        CUDA_HOSTDEV int AllocateMessageMemory();
+        int AllocateMessageMemory();
 
-        CUDA_HOSTDEV const DualWorkspaceID AllocateDualWorkspaceMem(T epsilon) const;
+        const DualWorkspaceID AllocateDualWorkspaceMem(T epsilon) const;
 
-    	CUDA_HOSTDEV void DeAllocateDualWorkspaceMem(DualWorkspaceID& dw) const;
+    	void DeAllocateDualWorkspaceMem(DualWorkspaceID& dw) const;
 
-    	CUDA_HOSTDEV T* GetMaxMemComputeMu(T epsilon) const;
+    	T* GetMaxMemComputeMu(T epsilon) const;
 
         T* CudaGetMaxMemComputeMu(T epsilon) const;
 
-        CUDA_HOSTDEV S* GetMaxMemComputeMuIXVar() const;
+        S* GetMaxMemComputeMuIXVar() const;
 
         S* CudaGetMaxMemComputeMuIXVar() const;
 
-        CUDA_HOSTDEV const RRegionWorkspaceID AllocateReparameterizeRegionWorkspaceMem(T epsilon) const;
+        const RRegionWorkspaceID AllocateReparameterizeRegionWorkspaceMem(T epsilon) const;
 
-        CUDA_HOSTDEV void DeAllocateReparameterizeRegionWorkspaceMem(RRegionWorkspaceID& w) const;
+        void DeAllocateReparameterizeRegionWorkspaceMem(RRegionWorkspaceID& w) const;
 
-    	CUDA_HOSTDEV const REdgeWorkspaceID AllocateReparameterizeEdgeWorkspaceMem(T epsilon) const;
+    	const REdgeWorkspaceID AllocateReparameterizeEdgeWorkspaceMem(T epsilon) const;
 
         const REdgeWorkspaceID CudaAllocateReparameterizeEdgeWorkspaceMem(T epsilon) const;
 
-    	CUDA_HOSTDEV void DeAllocateReparameterizeEdgeWorkspaceMem(REdgeWorkspaceID& w) const;
+    	void DeAllocateReparameterizeEdgeWorkspaceMem(REdgeWorkspaceID& w) const;
 
         void CudaDeAllocateReparameterizeEdgeWorkspaceMem(REdgeWorkspaceID& w) const;
 
-        CUDA_HOSTDEV const GEdgeWorkspaceID AllocateGradientEdgeWorkspaceMem() const;
+        const GEdgeWorkspaceID AllocateGradientEdgeWorkspaceMem() const;
 
-    	CUDA_HOSTDEV void DeAllocateGradientEdgeWorkspaceMem(GEdgeWorkspaceID& w) const;
+    	void DeAllocateGradientEdgeWorkspaceMem(GEdgeWorkspaceID& w) const;
 
-        CUDA_HOSTDEV const FunctionUpdateWorkspaceID AllocateFunctionUpdateWorkspaceMem() const;
+        const FunctionUpdateWorkspaceID AllocateFunctionUpdateWorkspaceMem() const;
 
-        CUDA_HOSTDEV void DeAllocateFunctionUpdateWorkspaceID(FunctionUpdateWorkspaceID& w) const;
+        void DeAllocateFunctionUpdateWorkspaceID(FunctionUpdateWorkspaceID& w) const;
 
-        CUDA_HOSTDEV int FillEdge();
+        int FillEdge();
 
-    	CUDA_HOSTDEV void ComputeCumulativeSize(MPNode* r_ptr, std::vector<S>& cumVarR);
+    	void ComputeCumulativeSize(MPNode* r_ptr, std::vector<S>& cumVarR);
 
-        CUDA_HOSTDEV int FillTranslator();
+        int FillTranslator();
 
-    	CUDA_HOSTDEV size_t NumberOfRegionsTotal() const;
+    	size_t NumberOfRegionsTotal() const;
 
-    	CUDA_HOSTDEV size_t NumberOfRegionsWithParents() const;
+    	size_t NumberOfRegionsWithParents() const;
 
-        CUDA_HOSTDEV size_t NumberOfEdges() const;
+        size_t NumberOfEdges() const;
 
-        CUDA_HOSTDEV void UpdateEdge(T* lambdaBase, T* lambdaGlobal, int e, bool additiveUpdate);
+        void UpdateEdge(T* lambdaBase, T* lambdaGlobal, int e, bool additiveUpdate);
 
-        CUDA_HOSTDEV void CopyLambda(T* lambdaSrc, T* lambdaDst, size_t s_r_e) const;
+        void CopyLambda(T* lambdaSrc, T* lambdaDst, size_t s_r_e) const;
 
-    	CUDA_HOSTDEV void CopyMessagesForLocalFunction(T* lambdaSrc, T* lambdaDst, int r) const;
+    	void CopyMessagesForLocalFunction(T* lambdaSrc, T* lambdaDst, int r) const;
 
-        CUDA_HOSTDEV void ComputeLocalFunctionUpdate(T* lambdaBase, int r, T epsilon, T multiplier, bool additiveUpdate, FunctionUpdateWorkspaceID& w);
+        void ComputeLocalFunctionUpdate(T* lambdaBase, int r, T epsilon, T multiplier, bool additiveUpdate, FunctionUpdateWorkspaceID& w);
 
-    	CUDA_HOSTDEV void UpdateLocalFunction(T* lambdaBase, T* lambdaGlobal, int r, bool additiveUpdate);
+    	void UpdateLocalFunction(T* lambdaBase, T* lambdaGlobal, int r, bool additiveUpdate);
 
-    	CUDA_HOSTDEV void CopyMessagesForEdge(T* lambdaSrc, T* lambdaDst, int e) const;
+    	void CopyMessagesForEdge(T* lambdaSrc, T* lambdaDst, int e) const;
 
         //void CudaCopyMessagesForEdge(T* lambdaSrc, T* lambdaDst, int e) const ;
 
-        CUDA_HOSTDEV void CopyMessagesForStar(T* lambdaSrc, T* lambdaDst, int r) const;
+        void CopyMessagesForStar(T* lambdaSrc, T* lambdaDst, int r) const;
 
-        CUDA_HOSTDEV void ReparameterizeEdge(T* lambdaBase, int e, T epsilon, bool additiveUpdate, REdgeWorkspaceID& wspace);
+        void ReparameterizeEdge(T* lambdaBase, int e, T epsilon, bool additiveUpdate, REdgeWorkspaceID& wspace);
 
-        CUDA_HOSTDEV T ComputeMu(T* lambdaBase, EdgeID* edge, S* indivVarStates, size_t numVarsOverlap, T epsilon, T* workspaceMem, S* MuIXMem);
+        T ComputeMu(T* lambdaBase, EdgeID* edge, S* indivVarStates, size_t numVarsOverlap, T epsilon, T* workspaceMem, S* MuIXMem);
 
-        CUDA_HOSTDEV void UpdateRegion(T* lambdaBase, T* lambdaGlobal, int r, bool additiveUpdate);
+        void UpdateRegion(T* lambdaBase, T* lambdaGlobal, int r, bool additiveUpdate);
 
-        CUDA_HOSTDEV void ReparameterizeRegion(T* lambdaBase, int r, T epsilon, bool additiveUpdate, RRegionWorkspaceID& wspace);
+        void ReparameterizeRegion(T* lambdaBase, int r, T epsilon, bool additiveUpdate, RRegionWorkspaceID& wspace);
 
-        CUDA_HOSTDEV T ComputeReparameterizationPotential(T* lambdaBase, const MPNode* const r_ptr, const S s_r) const;
+        T ComputeReparameterizationPotential(T* lambdaBase, const MPNode* const r_ptr, const S s_r) const;
 
-        CUDA_HOSTDEV T ComputeDual(T* lambdaBase, T epsilon, DualWorkspaceID& dw) const;
+        T ComputeDual(T* lambdaBase, T epsilon, DualWorkspaceID& dw) const;
 
-        CUDA_HOSTDEV size_t GetLambdaSize() const;
+        size_t GetLambdaSize() const;
 
-        CUDA_HOSTDEV void GradientUpdateEdge(T* lambdaBase, int e, T epsilon, T stepSize, bool additiveUpdate, GEdgeWorkspaceID& gew);
+        void GradientUpdateEdge(T* lambdaBase, int e, T epsilon, T stepSize, bool additiveUpdate, GEdgeWorkspaceID& gew);
 
-        CUDA_HOSTDEV void ComputeBeliefForRegion(MPNode* r_ptr, T* lambdaBase, T epsilon, T* mem, size_t s_r_e);
+        void ComputeBeliefForRegion(MPNode* r_ptr, T* lambdaBase, T epsilon, T* mem, size_t s_r_e);
 
-    	CUDA_HOSTDEV size_t ComputeBeliefs(T* lambdaBase, T epsilon, T** belPtr, bool OnlyUnaries);
+        size_t ComputeBeliefs(T* lambdaBase, T epsilon, T** belPtr, bool OnlyUnaries);
 
-        CUDA_HOSTDEV void Marginalize(T* curBel, T* oldBel, EdgeID* edge, const std::vector<S>& indivVarStates, T& marg_new, T& marg_old);
+        void Marginalize(T* curBel, T* oldBel, EdgeID* edge, const std::vector<S>& indivVarStates, T& marg_new, T& marg_old);
 
-    	CUDA_HOSTDEV T ComputeImprovement(T* curBel, T* oldBel);
+        T ComputeImprovement(T* curBel, T* oldBel);
 
-    	CUDA_HOSTDEV void DeleteBeliefs();
+    	void DeleteBeliefs();
+
+        int CopyMessageMemory();
 
     private:
 
-        void AllocateNewGPUNode(T c_r, const std::vector<S>& varIX, T* pot, S potSize);
+        void AllocateNewGPUNode(MPNode* cpuNode, T c_r, const std::vector<S>& varIX, T* pot, S potSize);
 
         bool DeallocateGpuNode(GpuMPNode* node);
 
         void setupDeviceVariables();
+
+        void AllocateMsgContainers();
+
+        void AddGpuConnection(const MPNode* child, const MPNode* parent);
+
 
 
 
