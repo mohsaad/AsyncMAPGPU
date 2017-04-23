@@ -68,7 +68,7 @@ template<typename T, typename S>
 bool MPGraph<T,S>::DeallocateGpuNode(GpuMPNode* node)
 {
     GpuMPNode hostNode(0, NULL, NULL, 0, 0);
-    gpuErrchk(cudaMemcpy(&hostNode, node, sizeof(GpuMPNode*), cudaMemcpyDeviceToHost));
+    gpuErrchk(cudaMemcpy(&hostNode, node, sizeof(hostNode), cudaMemcpyDeviceToHost));
 
     gpuErrchk(cudaFree(hostNode.varIX));
     gpuErrchk(cudaFree(hostNode.pot));
@@ -88,12 +88,6 @@ template<typename T, typename S>
 int MPGraph<T,S>::AddVariables(const std::vector<S>& card) {
     Cardinalities = card;
 
-    // add that to vector as well
-    GpuCardinalities.clear();
-    for(size_t i = 0; i < card.size(); i++)
-    {
-        GpuCardinalities.push_back(card[i]);
-    }
 
     return 0;
 }
@@ -104,7 +98,7 @@ const typename MPGraph<T,S>::PotentialID MPGraph<T,S>::AddPotential(const typena
     Potentials.push_back(potVals);
 
     // also push back on GPU
-    GpuPotentials.push_back(potVals);
+   // GpuPotentials.push_back(potVals);
 
     return typename MPGraph<T,S>::PotentialID{ PotID };
 }
@@ -163,29 +157,29 @@ int MPGraph<T,S>::AddConnection(const RegionID& child, const RegionID& parent) {
 
     //AddGpuConnection(c, p);
 
-    GpuMPNode* gpuChild = CpuGpuMap[c];
-    GpuMPNode* gpuParent = CpuGpuMap[p];
+    //GpuMPNode* gpuChild = CpuGpuMap[c];
+    //GpuMPNode* gpuParent = CpuGpuMap[p];
 
-    GpuMsgContainer cCopy(0, gpuParent, NULL, NULL);
-    GpuMsgContainer pCopy(0, gpuChild, NULL, NULL);
+    //GpuMsgContainer cCopy(0, gpuParent, NULL, NULL);
+    //GpuMsgContainer pCopy(0, gpuChild, NULL, NULL);
 
 
-    GpuMsgContainer* CMsg;
-    GpuMsgContainer* PMsg;
-    gpuErrchk(cudaMalloc((void**)&CMsg, sizeof(GpuMsgContainer)));
-    gpuErrchk(cudaMalloc((void**)&PMsg, sizeof(GpuMsgContainer)));
+   // GpuMsgContainer* CMsg;
+    //GpuMsgContainer* PMsg;
+    //gpuErrchk(cudaMalloc((void**)&CMsg, sizeof(GpuMsgContainer)));
+    //gpuErrchk(cudaMalloc((void**)&PMsg, sizeof(GpuMsgContainer)));
 
 
     // copy over stuff to device
-    gpuErrchk(cudaMemcpy(CMsg, &cCopy, sizeof(cCopy), cudaMemcpyHostToDevice));
-    gpuErrchk(cudaMemcpy(PMsg, &pCopy, sizeof(pCopy), cudaMemcpyHostToDevice));
+   // gpuErrchk(cudaMemcpy(CMsg, &cCopy, sizeof(cCopy), cudaMemcpyHostToDevice));
+    //gpuErrchk(cudaMemcpy(PMsg, &pCopy, sizeof(pCopy), cudaMemcpyHostToDevice));
 
-    nodeParents[gpuChild].push_back(CMsg);
-    nodeChildren[gpuParent].push_back(PMsg);
+    //nodeParents[gpuChild].push_back(CMsg);
+   // nodeChildren[gpuParent].push_back(PMsg);
 
     // insert a copy here
-    CpuGpuMsgMap.insert(std::pair<MsgContainer*, GpuMsgContainer*>(&(c->Parents.back()), nodeParents[CpuGpuMap[c]].back()));
-    CpuGpuMsgMap.insert(std::pair<MsgContainer*, GpuMsgContainer*>(&(p->Children.back()), nodeChildren[CpuGpuMap[p]].back()));
+   // CpuGpuMsgMap.insert(std::pair<MsgContainer*, GpuMsgContainer*>(&(c->Parents.back()), nodeParents[CpuGpuMap[c]].back()));
+   // CpuGpuMsgMap.insert(std::pair<MsgContainer*, GpuMsgContainer*>(&(p->Children.back()), nodeChildren[CpuGpuMap[p]].back()));
 
     return 0;
 }
@@ -195,67 +189,69 @@ int MPGraph<T,S>::CopyMessageMemory()
 {
     // first copy over nodes
     // specifically we need to copy over sum_c_r_c_p
+    MsgContainer* origContainer;
     GpuMPNode* gpuNode;
     GpuMPNode hostNode(0,NULL,NULL,0,0);
 
     GpuMsgContainer* gpuContainer;
     GpuMsgContainer hostContainer(0, NULL, NULL, NULL);
- 
+
+
     for(int i = 0; i < Graph.size(); i++)
     {
+
         gpuNode = CpuGpuMap[Graph[i]];
+
 
         // all we need to do for now is copy over sum_c_r_c_p
         // later, I think we'll allocate everything here
         gpuErrchk(cudaMemcpy(&hostNode, gpuNode, sizeof(hostNode), cudaMemcpyDeviceToHost));
         hostNode.sum_c_r_c_p = Graph[i]->sum_c_r_c_p;
-        hostNode.GpuParents = NULL;
-	hostNode.GpuChildren=NULL;
+       
 
-	gpuErrchk(cudaMalloc((void**)&hostNode.GpuParents, sizeof(hostContainer)*Graph[i].Parents.size()));
-	gpuErrchk(cudaMalloc((void**)&hostNode.GpuChildren, sizeof(hostContainer)*Graph[i].Children.size()));
-
-	gpuErrchk(cudaMemcpy(gpuNode, &hostNode, sizeof(hostNode), cudaMemcpyHostToDevice));
+	gpuErrchk(cudaMalloc((void**)&(hostNode.GpuParents), sizeof(hostContainer)*Graph[i]->Parents.size()));
+	gpuErrchk(cudaMalloc((void**)&(hostNode.GpuChildren), sizeof(hostContainer)*Graph[i]->Children.size()));
 
 
 
         // parents
         for(int j = 0; j < Graph[i]->Parents.size(); j++)
         {
-            gpuContainer = CpuGpuMsgMap[&(Graph[i]->Parents[j])];
-            gpuErrchk(cudaMemcpy(&hostContainer, gpuContainer, sizeof(hostContainer), cudaMemcpyDeviceToHost));
-
-            hostContainer.lambda = Graph[i]->Parents[j].lambda;
+            origContainer = &(Graph[i]->Parents[j]);
+	    hostContainer.lambda = origContainer->lambda;
+	    hostContainer.node = CpuGpuMap[Graph[i]];
             hostContainer.edge = CpuGpuEdgeMap[Graph[i]->Parents[j].edge];
 
             // fill out translator array
             gpuErrchk(cudaMalloc((void**)&(hostContainer.Translator), sizeof(S)* Graph[i]->Parents[j].Translator.size()));
             gpuErrchk(cudaMemcpy(hostContainer.Translator,&(Graph[i]->Parents[j].Translator[0]), sizeof(S)* Graph[i]->Parents[j].Translator.size(), cudaMemcpyHostToDevice));
 
-            // copy back
-            gpuErrchk(cudaMemcpy(gpuContainer, &hostContainer, sizeof(hostContainer), cudaMemcpyHostToDevice));
+            // malloc and copy
+            gpuErrchk(cudaMemcpy(&(hostNode.GpuParents[j]), &hostContainer, sizeof(hostContainer), cudaMemcpyHostToDevice));
 
+	   
+	
         }
 
         // children
         for(int j = 0; j < Graph[i]->Children.size(); j++)
         {
-            gpuContainer = CpuGpuMsgMap[&(Graph[i]->Children[j])];
-            gpuErrchk(cudaMemcpy(&hostContainer, gpuContainer, sizeof(hostContainer), cudaMemcpyDeviceToHost));
-
-            hostContainer.lambda = Graph[i]->Children[j].lambda;
+            origContainer = &(Graph[i]->Children[j]);
+	    hostContainer.lambda = origContainer->lambda;
+	    hostContainer.node = CpuGpuMap[Graph[i]];
             hostContainer.edge = CpuGpuEdgeMap[Graph[i]->Children[j].edge];
-
-
 
             // fill out translator array
             gpuErrchk(cudaMalloc((void**)&(hostContainer.Translator), sizeof(S)* Graph[i]->Children[j].Translator.size()));
             gpuErrchk(cudaMemcpy(hostContainer.Translator,&(Graph[i]->Children[j].Translator[0]), sizeof(S)* Graph[i]->Children[j].Translator.size(), cudaMemcpyHostToDevice));
 
-            // copy back
-            gpuErrchk(cudaMemcpy(gpuContainer, &hostContainer, sizeof(hostContainer), cudaMemcpyHostToDevice));
+            // malloc and copy
+            gpuErrchk(cudaMemcpy(&hostNode.GpuChildren[j], &hostContainer, sizeof(hostContainer), cudaMemcpyHostToDevice));
 
         }
+
+	
+	gpuErrchk(cudaMemcpy(gpuNode, &hostNode, sizeof(hostNode), cudaMemcpyHostToDevice));
     }
 
     // copy over edges
@@ -282,6 +278,31 @@ int MPGraph<T,S>::CopyMessageMemory()
         gpuErrchk(cudaMemcpy(gpuEdge, &hostEdge, sizeof(hostEdge), cudaMemcpyHostToDevice));
 
     }
+
+    deviceGpuGraph = GpuGraph;
+    deviceNodes = GpuGraph.size();
+    deviceGpuEdges = GpuEdges;
+    numEdges = GpuEdges.size();
+    deviceGraph = &deviceGpuGraph[0];
+    deviceEdges = &deviceGpuEdges[0];
+
+
+    // cardinalities
+    gpuErrchk(cudaMalloc((void**)&deviceCardinalities, sizeof(S)*Cardinalities.size()));
+    gpuErrchk(cudaMemcpy(deviceCardinalities, &Cardinalities[0], Cardinalities.size() * sizeof(S), cudaMemcpyHostToDevice));
+    numCards = Cardinalities.size();
+
+    // Potentials
+    PotentialVector tmpPot {NULL, 0};
+    T* data;
+    for(int i = 0; i < Potentials.size(); i++)
+    {
+        gpuErrchk(cudaMalloc((void**)&data, sizeof(T) * Potentials[i].Size));
+        gpuErrchk(cudaMemcpy(data, Potentials[i].data, sizeof(T)*Potentials[i].Size, cudaMemcpyHostToDevice));
+    }
+       
+
+
 
 
     return 0;
@@ -322,7 +343,8 @@ int MPGraph<T,S>::AllocateMessageMemory() {
                     gpuErrchk(cudaMemcpy(gpuID, &testID, sizeof(testID), cudaMemcpyHostToDevice));
 
                     CpuGpuEdgeMap.insert(std::pair<EdgeID*, GpuEdgeID*>(Edges.back(), gpuID));
-                    gpuID = NULL;
+                    GpuEdges.push_back(gpuID);
+		    gpuID = NULL;
 
                     break;
                 }

@@ -213,14 +213,19 @@ class MPGraph
 
     	thrust::host_vector<S> GpuCardinalities;
     	thrust::host_vector<GpuMPNode*> GpuGraph;
+	thurst::device_vector<GpuMPNode*> deviceGpuGraph;
     	thrust::host_vector<size_t> GpuValidRegionMapping;
     	thrust::host_vector<PotentialVector> GpuPotentials;
 
         // all device pointers
         S* deviceCardinalities;
-        GpuMPNode* deviceGraph;
+	size_t numCards;
+
+        GpuMPNode** deviceGraph;
+	size_t deviceNodes;
         size_t* deviceValidRegionMapping;
         PotentialVector* devicePotentials;
+	size_t numPotentials;
 
     	struct GpuEdgeID {
     		GpuMsgContainer* parentPtr;
@@ -232,7 +237,9 @@ class MPGraph
     		S newVarSize;
     	};
     	thrust::host_vector<GpuEdgeID*> GpuEdges;
-        GpuEdgeID* deviceEdges;
+	thrust::device_vector<GpuEdgeID*> deviceGpuEdges;
+        GpuEdgeID** deviceEdges;
+	size_t numEdges;
 
         std::map<MPNode*, GpuMPNode*> CpuGpuMap;
         std::map<EdgeID*, GpuEdgeID*> CpuGpuEdgeMap;
