@@ -351,6 +351,8 @@ class MPGraph
 
         bool DeallocateGpuNode(GpuMPNode* node);
 
+	bool DeallocateGpuContainer(GpuMsgContainer* container);
+	
         void setupDeviceVariables();
 
         void AllocateMsgContainers();
