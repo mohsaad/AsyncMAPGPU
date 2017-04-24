@@ -180,7 +180,7 @@ class MPGraph
 
 			};
 
-			S GetPotentialSize()
+			CUDA_HOSTDEV S GetPotentialSize()
 			{
 				return potSize;
 			};
@@ -198,11 +198,13 @@ class MPGraph
     	GpuMsgContainer(size_t l, GpuMPNode* n, GpuEdgeID* e, S* Trans) : lambda(l), node(n), edge(e), Translator(Trans) {};
     };
 
-    	struct GpuMPNode : public GpuRegion {
+    struct GpuMPNode : public GpuRegion {
     		GpuMPNode(T c_r, S* varIX, T* pot, S potSize, size_t varIXsize) : GpuRegion(c_r, pot, potSize, varIX, varIXsize) {};
 
             GpuMsgContainer* GpuParents;
             GpuMsgContainer* GpuChildren;
+            size_t numParents;
+            size_t numChildren;
 
 
     	};
@@ -211,21 +213,24 @@ class MPGraph
         std::map<GpuMPNode*, std::vector<GpuMsgContainer*>> nodeParents;
         std::map<GpuMPNode*, std::vector<GpuMsgContainer*>> nodeChildren;
 
-    	thrust::host_vector<S> GpuCardinalities;
-    	thrust::host_vector<GpuMPNode*> GpuGraph;
-	thurst::device_vector<GpuMPNode*> deviceGpuGraph;
-    	thrust::host_vector<size_t> GpuValidRegionMapping;
-    	thrust::host_vector<PotentialVector> GpuPotentials;
+        thrust::host_vector<S> GpuCardinalities;
+        thrust::host_vector<GpuMPNode*> GpuGraph;
+	    thrust::device_vector<GpuMPNode*> deviceGpuGraph;
+        thrust::host_vector<size_t> GpuValidRegionMapping;
+        thrust::host_vector<PotentialVector> GpuPotentials;
 
         // all device pointers
         S* deviceCardinalities;
-	size_t numCards;
+        size_t numCards;
 
         GpuMPNode** deviceGraph;
-	size_t deviceNodes;
+        size_t deviceNodes;
+
         size_t* deviceValidRegionMapping;
+        size_t numValidRegions;
+
         PotentialVector* devicePotentials;
-	size_t numPotentials;
+        size_t numPotentials;
 
     	struct GpuEdgeID {
     		GpuMsgContainer* parentPtr;
@@ -234,12 +239,13 @@ class MPGraph
     		S* newVarStateMultipliers;//cumulative size of parent region variables that are unique to parent region
     		//std::vector<S> newVarCumSize;//cumulative size of new variables
     		S* newVarIX;//variable indices of new variables
+            size_t newVarIXsize;
     		S newVarSize;
     	};
     	thrust::host_vector<GpuEdgeID*> GpuEdges;
-	thrust::device_vector<GpuEdgeID*> deviceGpuEdges;
+	    thrust::device_vector<GpuEdgeID*> deviceGpuEdges;
         GpuEdgeID** deviceEdges;
-	size_t numEdges;
+	    size_t numEdges;
 
         std::map<MPNode*, GpuMPNode*> CpuGpuMap;
         std::map<EdgeID*, GpuEdgeID*> CpuGpuEdgeMap;
@@ -264,37 +270,41 @@ class MPGraph
 
         int AllocateMessageMemory();
 
-        const DualWorkspaceID AllocateDualWorkspaceMem(T epsilon) const;
+        __device__ const DualWorkspaceID AllocateDualWorkspaceMem(T epsilon) const;
 
-    	void DeAllocateDualWorkspaceMem(DualWorkspaceID& dw) const;
+        const DualWorkspaceID HostAllocateDualWorkspaceMem(T epsilon) const;
 
-    	T* GetMaxMemComputeMu(T epsilon) const;
+        void HostDeAllocateDualWorkspaceMem(DualWorkspaceID& dw) const;
 
-        T* CudaGetMaxMemComputeMu(T epsilon) const;
+    	__device__ void DeAllocateDualWorkspaceMem(DualWorkspaceID& dw) const;
 
-        S* GetMaxMemComputeMuIXVar() const;
+    	__device__ T* GetMaxMemComputeMu(T epsilon) const;
 
-        S* CudaGetMaxMemComputeMuIXVar() const;
+        __device__ T* CudaGetMaxMemComputeMu(T epsilon) const;
 
-        const RRegionWorkspaceID AllocateReparameterizeRegionWorkspaceMem(T epsilon) const;
+        __device__ S* GetMaxMemComputeMuIXVar() const;
 
-        void DeAllocateReparameterizeRegionWorkspaceMem(RRegionWorkspaceID& w) const;
+        __device__ S* CudaGetMaxMemComputeMuIXVar() const;
 
-    	const REdgeWorkspaceID AllocateReparameterizeEdgeWorkspaceMem(T epsilon) const;
+        __device__ const RRegionWorkspaceID AllocateReparameterizeRegionWorkspaceMem(T epsilon) const;
 
-        const REdgeWorkspaceID CudaAllocateReparameterizeEdgeWorkspaceMem(T epsilon) const;
+        __device__ void DeAllocateReparameterizeRegionWorkspaceMem(RRegionWorkspaceID& w) const;
 
-    	void DeAllocateReparameterizeEdgeWorkspaceMem(REdgeWorkspaceID& w) const;
+    	__device__ const REdgeWorkspaceID AllocateReparameterizeEdgeWorkspaceMem(T epsilon) const;
 
-        void CudaDeAllocateReparameterizeEdgeWorkspaceMem(REdgeWorkspaceID& w) const;
+        __device__ const REdgeWorkspaceID CudaAllocateReparameterizeEdgeWorkspaceMem(T epsilon) const;
 
-        const GEdgeWorkspaceID AllocateGradientEdgeWorkspaceMem() const;
+    	__device__ void DeAllocateReparameterizeEdgeWorkspaceMem(REdgeWorkspaceID& w) const;
 
-    	void DeAllocateGradientEdgeWorkspaceMem(GEdgeWorkspaceID& w) const;
+        __device__ void CudaDeAllocateReparameterizeEdgeWorkspaceMem(REdgeWorkspaceID& w) const;
 
-        const FunctionUpdateWorkspaceID AllocateFunctionUpdateWorkspaceMem() const;
+        __device__ const GEdgeWorkspaceID AllocateGradientEdgeWorkspaceMem() const;
 
-        void DeAllocateFunctionUpdateWorkspaceID(FunctionUpdateWorkspaceID& w) const;
+    	__device__ void DeAllocateGradientEdgeWorkspaceMem(GEdgeWorkspaceID& w) const;
+
+        __device__ const FunctionUpdateWorkspaceID AllocateFunctionUpdateWorkspaceMem() const;
+
+        __device__ void DeAllocateFunctionUpdateWorkspaceID(FunctionUpdateWorkspaceID& w) const;
 
         int FillEdge();
 
@@ -302,53 +312,61 @@ class MPGraph
 
         int FillTranslator();
 
-    	size_t NumberOfRegionsTotal() const;
+        T HostComputeReparameterizationPotential(T* lambdaBase, const MPNode* const r_ptr, const S s_r) const;
 
-    	size_t NumberOfRegionsWithParents() const;
+    	__device__ size_t NumberOfRegionsTotal() const;
 
-        size_t NumberOfEdges() const;
+    	__device__ size_t NumberOfRegionsWithParents() const;
 
-        void UpdateEdge(T* lambdaBase, T* lambdaGlobal, int e, bool additiveUpdate);
+        size_t HostNumberOfRegionsWithParents() const;
 
-        void CopyLambda(T* lambdaSrc, T* lambdaDst, size_t s_r_e) const;
+        __device__ size_t NumberOfEdges() const;
 
-    	void CopyMessagesForLocalFunction(T* lambdaSrc, T* lambdaDst, int r) const;
+        __device__ void UpdateEdge(T* lambdaBase, T* lambdaGlobal, int e, bool additiveUpdate);
 
-        void ComputeLocalFunctionUpdate(T* lambdaBase, int r, T epsilon, T multiplier, bool additiveUpdate, FunctionUpdateWorkspaceID& w);
+        __device__ void CopyLambda(T* lambdaSrc, T* lambdaDst, size_t s_r_e) const;
 
-    	void UpdateLocalFunction(T* lambdaBase, T* lambdaGlobal, int r, bool additiveUpdate);
+    	__device__ void CopyMessagesForLocalFunction(T* lambdaSrc, T* lambdaDst, int r) const;
 
-    	void CopyMessagesForEdge(T* lambdaSrc, T* lambdaDst, int e) const;
+        __device__ void ComputeLocalFunctionUpdate(T* lambdaBase, int r, T epsilon, T multiplier, bool additiveUpdate, FunctionUpdateWorkspaceID& w);
+
+    	__device__ void UpdateLocalFunction(T* lambdaBase, T* lambdaGlobal, int r, bool additiveUpdate);
+
+    	__device__ void CopyMessagesForEdge(T* lambdaSrc, T* lambdaDst, int e) const;
 
         //void CudaCopyMessagesForEdge(T* lambdaSrc, T* lambdaDst, int e) const ;
 
-        void CopyMessagesForStar(T* lambdaSrc, T* lambdaDst, int r) const;
+        __device__ void CopyMessagesForStar(T* lambdaSrc, T* lambdaDst, int r) const;
 
-        void ReparameterizeEdge(T* lambdaBase, int e, T epsilon, bool additiveUpdate, REdgeWorkspaceID& wspace);
+        __device__ void ReparameterizeEdge(T* lambdaBase, int e, T epsilon, bool additiveUpdate, REdgeWorkspaceID& wspace);
 
-        T ComputeMu(T* lambdaBase, EdgeID* edge, S* indivVarStates, size_t numVarsOverlap, T epsilon, T* workspaceMem, S* MuIXMem);
+        __device__ T ComputeMu(T* lambdaBase, GpuEdgeID* edge, S* indivVarStates, size_t numVarsOverlap, T epsilon, T* workspaceMem, S* MuIXMem);
 
-        void UpdateRegion(T* lambdaBase, T* lambdaGlobal, int r, bool additiveUpdate);
+        __device__ void UpdateRegion(T* lambdaBase, T* lambdaGlobal, int r, bool additiveUpdate);
 
-        void ReparameterizeRegion(T* lambdaBase, int r, T epsilon, bool additiveUpdate, RRegionWorkspaceID& wspace);
+        __device__ void ReparameterizeRegion(T* lambdaBase, int r, T epsilon, bool additiveUpdate, RRegionWorkspaceID& wspace);
 
-        T ComputeReparameterizationPotential(T* lambdaBase, const MPNode* const r_ptr, const S s_r) const;
+        __device__ T ComputeReparameterizationPotential(T* lambdaBase, const GpuMPNode* const r_ptr, const S s_r) const;
 
-        T ComputeDual(T* lambdaBase, T epsilon, DualWorkspaceID& dw) const;
+        __device__ T ComputeDual(T* lambdaBase, T epsilon, DualWorkspaceID& dw) const;
 
-        size_t GetLambdaSize() const;
+        T HostComputeDual(T* lambdaBase, T epsilon, DualWorkspaceID& dw) const;
 
-        void GradientUpdateEdge(T* lambdaBase, int e, T epsilon, T stepSize, bool additiveUpdate, GEdgeWorkspaceID& gew);
+        __device__ size_t GetLambdaSize() const;
 
-        void ComputeBeliefForRegion(MPNode* r_ptr, T* lambdaBase, T epsilon, T* mem, size_t s_r_e);
+        size_t HostGetLambdaSize() const;
 
-        size_t ComputeBeliefs(T* lambdaBase, T epsilon, T** belPtr, bool OnlyUnaries);
+        __device__ void GradientUpdateEdge(T* lambdaBase, int e, T epsilon, T stepSize, bool additiveUpdate, GEdgeWorkspaceID& gew);
 
-        void Marginalize(T* curBel, T* oldBel, EdgeID* edge, const std::vector<S>& indivVarStates, T& marg_new, T& marg_old);
+        __device__ void ComputeBeliefForRegion(GpuMPNode* r_ptr, T* lambdaBase, T epsilon, T* mem, size_t s_r_e);
 
-        T ComputeImprovement(T* curBel, T* oldBel);
+        __device__ size_t ComputeBeliefs(T* lambdaBase, T epsilon, T** belPtr, bool OnlyUnaries);
 
-    	void DeleteBeliefs();
+        __device__ void Marginalize(T* curBel, T* oldBel, GpuEdgeID* edge, const S* indivVarStates, size_t indivVarStatesLength, T& marg_new, T& marg_old);
+
+        __device__ T ComputeImprovement(T* curBel, T* oldBel);
+
+    	__device__ void DeleteBeliefs();
 
         int CopyMessageMemory();
 
@@ -359,7 +377,7 @@ class MPGraph
         bool DeallocateGpuNode(GpuMPNode* node);
 
 	bool DeallocateGpuContainer(GpuMsgContainer* container);
-	
+
         void setupDeviceVariables();
 
         void AllocateMsgContainers();

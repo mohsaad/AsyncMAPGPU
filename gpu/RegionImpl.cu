@@ -193,7 +193,6 @@ int MPGraph<T,S>::CopyMessageMemory()
     GpuMPNode* gpuNode;
     GpuMPNode hostNode(0,NULL,NULL,0,0);
 
-    GpuMsgContainer* gpuContainer;
     GpuMsgContainer hostContainer(0, NULL, NULL, NULL);
 
 
@@ -207,20 +206,23 @@ int MPGraph<T,S>::CopyMessageMemory()
         // later, I think we'll allocate everything here
         gpuErrchk(cudaMemcpy(&hostNode, gpuNode, sizeof(hostNode), cudaMemcpyDeviceToHost));
         hostNode.sum_c_r_c_p = Graph[i]->sum_c_r_c_p;
-       
+
 
 	gpuErrchk(cudaMalloc((void**)&(hostNode.GpuParents), sizeof(hostContainer)*Graph[i]->Parents.size()));
 	gpuErrchk(cudaMalloc((void**)&(hostNode.GpuChildren), sizeof(hostContainer)*Graph[i]->Children.size()));
 
 
+        hostNode.numParents = Graph[i]->Parents.size();
+        hostNode.numChildren = Graph[i]->Children.size();
 
         // parents
         for(int j = 0; j < Graph[i]->Parents.size(); j++)
         {
             origContainer = &(Graph[i]->Parents[j]);
-	    hostContainer.lambda = origContainer->lambda;
-	    hostContainer.node = CpuGpuMap[Graph[i]];
+	        hostContainer.lambda = origContainer->lambda;
+            hostContainer.node = CpuGpuMap[Graph[i]];
             hostContainer.edge = CpuGpuEdgeMap[Graph[i]->Parents[j].edge];
+
 
             // fill out translator array
             gpuErrchk(cudaMalloc((void**)&(hostContainer.Translator), sizeof(S)* Graph[i]->Parents[j].Translator.size()));
@@ -229,8 +231,8 @@ int MPGraph<T,S>::CopyMessageMemory()
             // malloc and copy
             gpuErrchk(cudaMemcpy(&(hostNode.GpuParents[j]), &hostContainer, sizeof(hostContainer), cudaMemcpyHostToDevice));
 
-	   
-	
+
+
         }
 
         // children
@@ -250,7 +252,7 @@ int MPGraph<T,S>::CopyMessageMemory()
 
         }
 
-	
+
 	gpuErrchk(cudaMemcpy(gpuNode, &hostNode, sizeof(hostNode), cudaMemcpyHostToDevice));
     }
 
@@ -263,6 +265,7 @@ int MPGraph<T,S>::CopyMessageMemory()
         gpuErrchk(cudaMemcpy(&hostEdge, gpuEdge, sizeof(hostEdge), cudaMemcpyDeviceToHost));
 
         hostEdge.newVarSize = Edges[i]->newVarSize;
+        hostEdge.newVarIXsize = Edges[i]->newVarIX.size();
 
         // now, allocate space for the three vectors
         gpuErrchk(cudaMalloc((void**)&(hostEdge.rStateMultipliers), sizeof(S)*Edges[i]->rStateMultipliers.size()));
@@ -283,8 +286,8 @@ int MPGraph<T,S>::CopyMessageMemory()
     deviceNodes = GpuGraph.size();
     deviceGpuEdges = GpuEdges;
     numEdges = GpuEdges.size();
-    deviceGraph = &deviceGpuGraph[0];
-    deviceEdges = &deviceGpuEdges[0];
+    deviceGraph = thrust::raw_pointer_cast(GpuGraph.data());
+    deviceEdges = thrust::raw_pointer_cast(GpuEdges.data());
 
 
     // cardinalities
@@ -297,13 +300,14 @@ int MPGraph<T,S>::CopyMessageMemory()
     T* data;
     for(int i = 0; i < Potentials.size(); i++)
     {
-        gpuErrchk(cudaMalloc((void**)&data, sizeof(T) * Potentials[i].Size));
-        gpuErrchk(cudaMemcpy(data, Potentials[i].data, sizeof(T)*Potentials[i].Size, cudaMemcpyHostToDevice));
+        gpuErrchk(cudaMalloc((void**)&data, sizeof(T) * Potentials[i].size));
+        gpuErrchk(cudaMemcpy(data, Potentials[i].data, sizeof(T)*Potentials[i].size, cudaMemcpyHostToDevice));
     }
-       
 
-
-
+    // Valid region mapping
+    gpuErrchk(cudaMalloc((void**)deviceValidRegionMapping, sizeof(size_t)*GpuValidRegionMapping.size()));
+    gpuErrchk(cudaMemcpy(deviceValidRegionMapping, &GpuValidRegionMapping[0],sizeof(size_t)*GpuValidRegionMapping.size(), cudaMemcpyHostToDevice));
+    numValidRegions = GpuValidRegionMapping.size();
 
     return 0;
 
@@ -362,150 +366,6 @@ int MPGraph<T,S>::AllocateMessageMemory() {
         r_ptr->sum_c_r_c_p = sum_c_p;
     }
     return 0;
-}
-
-
-
-template<typename T, typename S>
-const typename MPGraph<T,S>::DualWorkspaceID MPGraph<T,S>::AllocateDualWorkspaceMem(T epsilon) const {
-    size_t maxMem = 0;
-    for (typename std::vector<MPNode*>::const_iterator r = Graph.begin(), r_e = Graph.end(); r != r_e; ++r) {
-        MPNode* r_ptr = *r;
-        T ecr = epsilon*r_ptr->c_r;
-        size_t s_r_e = r_ptr->GetPotentialSize();
-
-        if (ecr != T(0)) {
-            maxMem = (s_r_e > maxMem) ? s_r_e : maxMem;
-        }
-    }
-
-    return DualWorkspaceID{ ((maxMem > 0) ? new T[maxMem] : NULL) };
-}
-
-template<typename T, typename S>
-void MPGraph<T,S>::DeAllocateDualWorkspaceMem(DualWorkspaceID& dw) const {
-    delete[] dw.DualWorkspace;
-}
-
-template<typename T, typename S>
-T* MPGraph<T,S>::GetMaxMemComputeMu(T epsilon) const {
-    size_t maxMem = 0;
-    for (typename std::vector<EdgeID*>::const_iterator e = Edges.begin(), e_e = Edges.end(); e != e_e; ++e) {
-        EdgeID* edge = *e;
-        size_t s_p_e = edge->newVarSize;
-        MPNode* p_ptr = edge->parentPtr->node;
-
-        T ecp = epsilon*p_ptr->c_r;
-        if (ecp != T(0)) {
-            maxMem = (s_p_e > maxMem) ? s_p_e : maxMem;
-        }
-    }
-    return ((maxMem > 0) ? new T[maxMem] : NULL);
-}
-
-
-template<typename T, typename S>
-S* MPGraph<T,S>::GetMaxMemComputeMuIXVar() const {
-    size_t maxMem = 0;
-    for (size_t r = 0; r < ValidRegionMapping.size(); ++r) {
-        MPNode* r_ptr = Graph[ValidRegionMapping[r]];
-        for (typename std::vector<MsgContainer>::const_iterator p = r_ptr->Parents.begin(), p_e = r_ptr->Parents.end(); p != p_e; ++p) {
-            size_t tmp = p->edge->newVarIX.size();
-            maxMem = (tmp>maxMem) ? tmp : maxMem;
-        }
-    }
-
-    return ((maxMem > 0) ? new S[maxMem] : NULL);
-}
-
-
-
-
-template<typename T, typename S>
-const typename MPGraph<T,S>::RRegionWorkspaceID MPGraph<T,S>::AllocateReparameterizeRegionWorkspaceMem(T epsilon) const {
-    size_t maxMem = 0;
-    size_t maxIXMem = 0;
-    for (size_t r = 0; r < ValidRegionMapping.size(); ++r) {
-        MPNode* r_ptr = Graph[ValidRegionMapping[r]];
-        size_t psz = r_ptr->Parents.size();
-        maxMem = (psz>maxMem) ? psz : maxMem;
-        size_t rvIX = r_ptr->varIX.size();
-        maxIXMem = (rvIX>maxIXMem) ? rvIX : maxIXMem;
-    }
-
-    return RRegionWorkspaceID{ ((maxMem > 0) ? new T[maxMem] : NULL), GetMaxMemComputeMu(epsilon), GetMaxMemComputeMuIXVar(), ((maxIXMem > 0) ? new S[maxIXMem] : NULL) };
-}
-
-
-
-template<typename T, typename S>
-void MPGraph<T,S>::DeAllocateReparameterizeRegionWorkspaceMem(RRegionWorkspaceID& w) const {
-    delete[] w.RRegionMem;
-    delete[] w.MuMem;
-    delete[] w.MuIXMem;
-    delete[] w.IXMem;
-    w.RRegionMem = NULL;
-    w.MuMem = NULL;
-    w.MuIXMem = NULL;
-    w.IXMem = NULL;
-}
-
-template<typename T, typename S>
-const typename MPGraph<T,S>::REdgeWorkspaceID MPGraph<T,S>::AllocateReparameterizeEdgeWorkspaceMem(T epsilon) const {
-    size_t maxIXMem = 0;
-    for(typename std::vector<EdgeID*>::const_iterator eb=Edges.begin(), eb_e=Edges.end();eb!=eb_e;++eb) {
-        MPNode* r_ptr = (*eb)->childPtr->node;
-        size_t rNumVar = r_ptr->varIX.size();
-        maxIXMem = (rNumVar>maxIXMem) ? rNumVar : maxIXMem;
-    }
-    return REdgeWorkspaceID{ GetMaxMemComputeMu(epsilon), GetMaxMemComputeMuIXVar(), ((maxIXMem > 0) ? new S[maxIXMem] : NULL) };
-}
-
-
-
-template<typename T, typename S>
-void MPGraph<T,S>::DeAllocateReparameterizeEdgeWorkspaceMem(REdgeWorkspaceID& w) const {
-    delete[] w.MuMem;
-    delete[] w.MuIXMem;
-    delete[] w.IXMem;
-    w.MuMem = NULL;
-    w.MuIXMem = NULL;
-    w.IXMem = NULL;
-}
-
-
-
-template<typename T, typename S>
-const typename MPGraph<T,S>::GEdgeWorkspaceID MPGraph<T,S>::AllocateGradientEdgeWorkspaceMem() const {
-    size_t memSZ = 0;
-    for (typename std::vector<MPNode*>::const_iterator r = Graph.begin(), r_e = Graph.end(); r != r_e; ++r) {
-        MPNode* r_ptr = *r;
-        size_t s_r_e = r_ptr->GetPotentialSize();
-        memSZ = (s_r_e > memSZ) ? s_r_e : memSZ;
-    }
-    return GEdgeWorkspaceID{ ((memSZ>0) ? new T[memSZ] : NULL), ((memSZ>0) ? new T[memSZ] : NULL) };
-}
-
-template<typename T, typename S>
-void MPGraph<T,S>::DeAllocateGradientEdgeWorkspaceMem(GEdgeWorkspaceID& w) const {
-    delete[] w.mem1;
-    delete[] w.mem2;
-}
-
-template<typename T, typename S>
-const typename MPGraph<T,S>::FunctionUpdateWorkspaceID MPGraph<T,S>::AllocateFunctionUpdateWorkspaceMem() const {
-    size_t memSZ = 0;
-    for (typename std::vector<MPNode*>::const_iterator r = Graph.begin(), r_e = Graph.end(); r != r_e; ++r) {
-        MPNode* r_ptr = *r;
-        size_t s_r_e = r_ptr->GetPotentialSize();
-        memSZ = (s_r_e > memSZ) ? s_r_e : memSZ;
-    }
-    return FunctionUpdateWorkspaceID{ ((memSZ>0) ? new T[memSZ] : NULL)};
-}
-
-template<typename T, typename S>
-void MPGraph<T,S>::DeAllocateFunctionUpdateWorkspaceID(FunctionUpdateWorkspaceID& w) const {
-    delete[] w.mem;
 }
 
 template<typename T, typename S>
@@ -587,30 +447,256 @@ int MPGraph<T,S>::FillTranslator() {
     return 0;
 }
 
+
 template<typename T, typename S>
-size_t MPGraph<T,S>::NumberOfRegionsTotal() const {
-    return Graph.size();
+__device__ const typename MPGraph<T,S>::DualWorkspaceID MPGraph<T,S>::AllocateDualWorkspaceMem(T epsilon) const {
+    size_t maxMem = 0;
+    // for (typename std::vector<MPNode*>::const_iterator r = Graph.begin(), r_e = Graph.end(); r != r_e; ++r) {
+    for(int i = 0; i < deviceNodes; i++)
+    {
+        GpuMPNode* r_ptr = deviceGraph[i];
+        T ecr = epsilon*(r_ptr->c_r);
+        size_t s_r_e = r_ptr->GetPotentialSize();
+
+        if (ecr != T(0)) {
+            maxMem = (s_r_e > maxMem) ? s_r_e : maxMem;
+        }
+    }
+
+    return DualWorkspaceID{((maxMem > 0) ? new T[maxMem] : NULL)};
 }
 
 template<typename T, typename S>
-size_t MPGraph<T,S>::NumberOfRegionsWithParents() const {
+const typename MPGraph<T,S>::DualWorkspaceID MPGraph<T,S>::HostAllocateDualWorkspaceMem(T epsilon) const {
+    size_t maxMem = 0;
+    for (typename std::vector<MPNode*>::const_iterator r = Graph.begin(), r_e = Graph.end(); r != r_e; ++r) {
+        MPNode* r_ptr = *r;
+        T ecr = epsilon*r_ptr->c_r;
+        size_t s_r_e = r_ptr->GetPotentialSize();
+
+        if (ecr != T(0)) {
+            maxMem = (s_r_e > maxMem) ? s_r_e : maxMem;
+        }
+    }
+
+    return DualWorkspaceID{ ((maxMem > 0) ? new T[maxMem] : NULL) };
+}
+
+template<typename T, typename S>
+void MPGraph<T,S>::HostDeAllocateDualWorkspaceMem(DualWorkspaceID& dw) const {
+    delete[] dw.DualWorkspace;
+}
+
+template<typename T, typename S>
+size_t MPGraph<T,S>::HostNumberOfRegionsWithParents() const {
     return ValidRegionMapping.size();
 }
 
 template<typename T, typename S>
-size_t MPGraph<T,S>::NumberOfEdges() const {
-    return Edges.size();
+T MPGraph<T,S>::HostComputeDual(T* lambdaBase, T epsilon, DualWorkspaceID& dw) const {
+    T dual = T(0);
+
+    for (typename std::vector<MPNode*>::const_iterator r = Graph.begin(), r_e = Graph.end(); r != r_e; ++r) {
+        MPNode* r_ptr = *r;
+        T ecr = epsilon*r_ptr->c_r;
+        size_t s_r_e = r_ptr->GetPotentialSize();
+
+        T* mem = dw.DualWorkspace;
+
+        T maxVal = -std::numeric_limits<T>::max();
+        for (size_t s_r = 0; s_r != s_r_e; ++s_r) {
+            T potVal = HostComputeReparameterizationPotential(lambdaBase, r_ptr, s_r);
+
+            if (ecr != T(0)) {
+                potVal /= ecr;
+                mem[s_r] = potVal;
+            }
+
+            maxVal = ((potVal > maxVal) ? potVal : maxVal);
+        }
+
+        if (ecr != T(0)) {
+            T sum = expf(mem[0] - maxVal);
+            for (size_t s_r = 1; s_r != s_r_e; ++s_r) {
+                sum += expf(mem[s_r] - maxVal);
+            }
+            dual += ecr*(maxVal + std::log(sum + T(1e-20)));
+        } else {
+            dual += maxVal;
+        }
+    }
+    return dual;
+}
+
+
+template<typename T, typename S>
+__device__ void MPGraph<T,S>::DeAllocateDualWorkspaceMem(DualWorkspaceID& dw) const {
+    delete[] dw.DualWorkspace;
 }
 
 template<typename T, typename S>
-void MPGraph<T,S>::UpdateEdge(T* lambdaBase, T* lambdaGlobal, int e, bool additiveUpdate) {
+__device__ T* MPGraph<T,S>::GetMaxMemComputeMu(T epsilon) const {
+    size_t maxMem = 0;
+    // for (typename std::vector<EdgeID*>::const_iterator e = Edges.begin(), e_e = Edges.end(); e != e_e; ++e) {
+    for(int i = 0; i < numEdges; i++)
+    {
+        GpuEdgeID* edge = deviceEdges[i];
+        size_t s_p_e = edge->newVarSize;
+        GpuMPNode* p_ptr = edge->parentPtr->node;
+
+        T ecp = epsilon*p_ptr->c_r;
+        if (ecp != T(0)) {
+            maxMem = (s_p_e > maxMem) ? s_p_e : maxMem;
+        }
+    }
+    return ((maxMem > 0) ? new T[maxMem] : NULL);
+}
+
+
+template<typename T, typename S>
+__device__ S* MPGraph<T,S>::GetMaxMemComputeMuIXVar() const {
+    size_t maxMem = 0;
+    GpuMsgContainer* p;
+    for (size_t r = 0; r < numValidRegions; ++r) {
+        GpuMPNode* r_ptr = deviceGraph[deviceValidRegionMapping[r]];
+        // for (typename std::vector<MsgContainer>::const_iterator p = r_ptr->Parents.begin(), p_e = r_ptr->Parents.end(); p != p_e; ++p)
+        for(size_t i = 0; i < r_ptr->numParents; i++)
+        {
+            p = &(r_ptr->GpuParents[i]);
+            size_t tmp = p->edge->newVarIXsize;
+            maxMem = (tmp>maxMem) ? tmp : maxMem;
+        }
+    }
+
+    return ((maxMem > 0) ? new S[maxMem] : NULL);
+}
+
+
+
+
+template<typename T, typename S>
+__device__ const typename MPGraph<T,S>::RRegionWorkspaceID MPGraph<T,S>::AllocateReparameterizeRegionWorkspaceMem(T epsilon) const {
+    size_t maxMem = 0;
+    size_t maxIXMem = 0;
+    for (size_t r = 0; r < numValidRegions; ++r) {
+        GpuMPNode* r_ptr = deviceGraph[deviceValidRegionMapping[r]];
+        size_t psz = r_ptr->numParents;
+        maxMem = (psz>maxMem) ? psz : maxMem;
+        size_t rvIX = r_ptr->varIXsize;
+        maxIXMem = (rvIX>maxIXMem) ? rvIX : maxIXMem;
+    }
+
+    return RRegionWorkspaceID{ ((maxMem > 0) ? new T[maxMem] : NULL), GetMaxMemComputeMu(epsilon), GetMaxMemComputeMuIXVar(), ((maxIXMem > 0) ? new S[maxIXMem] : NULL) };
+}
+
+
+
+template<typename T, typename S>
+__device__ void MPGraph<T,S>::DeAllocateReparameterizeRegionWorkspaceMem(RRegionWorkspaceID& w) const {
+    delete[] w.RRegionMem;
+    delete[] w.MuMem;
+    delete[] w.MuIXMem;
+    delete[] w.IXMem;
+    w.RRegionMem = NULL;
+    w.MuMem = NULL;
+    w.MuIXMem = NULL;
+    w.IXMem = NULL;
+}
+
+template<typename T, typename S>
+__device__ const typename MPGraph<T,S>::REdgeWorkspaceID MPGraph<T,S>::AllocateReparameterizeEdgeWorkspaceMem(T epsilon) const {
+    size_t maxIXMem = 0;
+    // for(typename std::vector<EdgeID*>::const_iterator eb=Edges.begin(), eb_e=Edges.end();eb!=eb_e;++eb)
+    for(int i = 0; i < numEdges; i++)
+    {
+        GpuMPNode* r_ptr = deviceEdges[i]->childPtr->node;
+        size_t rNumVar = r_ptr->varIXsize;
+        maxIXMem = (rNumVar>maxIXMem) ? rNumVar : maxIXMem;
+    }
+    return REdgeWorkspaceID{ GetMaxMemComputeMu(epsilon), GetMaxMemComputeMuIXVar(), ((maxIXMem > 0) ? new S[maxIXMem] : NULL) };
+}
+
+
+
+template<typename T, typename S>
+__device__ void MPGraph<T,S>::DeAllocateReparameterizeEdgeWorkspaceMem(REdgeWorkspaceID& w) const {
+    delete[] w.MuMem;
+    delete[] w.MuIXMem;
+    delete[] w.IXMem;
+    w.MuMem = NULL;
+    w.MuIXMem = NULL;
+    w.IXMem = NULL;
+}
+
+
+
+template<typename T, typename S>
+__device__ const typename MPGraph<T,S>::GEdgeWorkspaceID MPGraph<T,S>::AllocateGradientEdgeWorkspaceMem() const {
+    size_t memSZ = 0;
+    // for (typename std::vector<MPNode*>::const_iterator r = Graph.begin(), r_e = Graph.end(); r != r_e; ++r)
+    for(size_t i = 0; i < deviceNodes; i++)
+    {
+        GpuMPNode* r_ptr = deviceGraph[i];
+        size_t s_r_e = r_ptr->GetPotentialSize();
+        memSZ = (s_r_e > memSZ) ? s_r_e : memSZ;
+    }
+    return GEdgeWorkspaceID{ ((memSZ>0) ? new T[memSZ] : NULL), ((memSZ>0) ? new T[memSZ] : NULL) };
+}
+
+template<typename T, typename S>
+__device__ void MPGraph<T,S>::DeAllocateGradientEdgeWorkspaceMem(GEdgeWorkspaceID& w) const {
+    delete[] w.mem1;
+    delete[] w.mem2;
+}
+
+template<typename T, typename S>
+__device__ const typename MPGraph<T,S>::FunctionUpdateWorkspaceID MPGraph<T,S>::AllocateFunctionUpdateWorkspaceMem() const {
+    size_t memSZ = 0;
+    // for (typename std::vector<MPNode*>::const_iterator r = Graph.begin(), r_e = Graph.end(); r != r_e; ++r)
+    for(int i = 0; i < deviceNodes; i++)
+    {
+        GpuMPNode* r_ptr = deviceGraph[i];
+        size_t s_r_e = r_ptr->GetPotentialSize();
+        memSZ = (s_r_e > memSZ) ? s_r_e : memSZ;
+    }
+    return FunctionUpdateWorkspaceID{ ((memSZ>0) ? new T[memSZ] : NULL)};
+}
+
+template<typename T, typename S>
+__device__ void MPGraph<T,S>::DeAllocateFunctionUpdateWorkspaceID(FunctionUpdateWorkspaceID& w) const {
+    delete[] w.mem;
+}
+
+
+
+
+
+
+
+template<typename T, typename S>
+__device__ size_t MPGraph<T,S>::NumberOfRegionsTotal() const {
+    return deviceNodes;
+}
+
+template<typename T, typename S>
+__device__ size_t MPGraph<T,S>::NumberOfRegionsWithParents() const {
+    return numValidRegions;
+}
+
+template<typename T, typename S>
+__device__ size_t MPGraph<T,S>::NumberOfEdges() const {
+    return numEdges;
+}
+
+template<typename T, typename S>
+__device__ void MPGraph<T,S>::UpdateEdge(T* lambdaBase, T* lambdaGlobal, int e, bool additiveUpdate) {
     if (lambdaBase == lambdaGlobal) {
         assert(additiveUpdate == false);//change ReparameterizationEdge function to directly perform update and don't call UpdateEdge
         return;
     }
 
-    EdgeID* edge = Edges[e];
-    MPNode* r_ptr = edge->childPtr->node;
+    GpuEdgeID* edge = deviceEdges[e];
+    GpuMPNode* r_ptr = edge->childPtr->node;
     size_t s_r_e = r_ptr->GetPotentialSize();
 
     for (size_t s_r = 0; s_r < s_r_e; ++s_r) {
@@ -623,7 +709,7 @@ void MPGraph<T,S>::UpdateEdge(T* lambdaBase, T* lambdaGlobal, int e, bool additi
 }
 
 template<typename T, typename S>
-void MPGraph<T,S>::CopyLambda(T* lambdaSrc, T* lambdaDst, size_t s_r_e) const {
+__device__ void MPGraph<T,S>::CopyLambda(T* lambdaSrc, T* lambdaDst, size_t s_r_e) const {
     //std::copy(lambdaSrc, lambdaSrc + s_r_e, lambdaDst);
     //memcpy((void*)(lambdaDst), (void*)(lambdaSrc), s_r_e*sizeof(T));
     for (T* ptr_e = lambdaSrc + s_r_e; ptr_e != lambdaSrc;) {
@@ -634,24 +720,33 @@ void MPGraph<T,S>::CopyLambda(T* lambdaSrc, T* lambdaDst, size_t s_r_e) const {
 
 
 template<typename T, typename S>
-void MPGraph<T,S>::CopyMessagesForLocalFunction(T* lambdaSrc, T* lambdaDst, int r) const {
-    MPNode* r_ptr = Graph[r];
+__device__ void MPGraph<T,S>::CopyMessagesForLocalFunction(T* lambdaSrc, T* lambdaDst, int r) const {
+    GpuMPNode* r_ptr = deviceGraph[r];
     size_t s_r_e = r_ptr->GetPotentialSize();
 
-    for (typename std::vector<MsgContainer>::const_iterator pn = r_ptr->Parents.begin(), pn_e = r_ptr->Parents.end(); pn != pn_e; ++pn) {
+    GpuMsgContainer* cn;
+    GpuMsgContainer* pn;
+
+    // for (typename std::vector<MsgContainer>::const_iterator pn = r_ptr->Parents.begin(), pn_e = r_ptr->Parents.end(); pn != pn_e; ++pn) {
+    for(size_t i = 0; i < r_ptr->numParents; i++)
+    {
+        pn = &(r_ptr->GpuParents[i]);
         CopyLambda(lambdaSrc + pn->lambda, lambdaDst + pn->lambda, s_r_e);
     }
 
-    for (typename std::vector<MsgContainer>::const_iterator cn = r_ptr->Children.begin(), cn_e = r_ptr->Children.end(); cn != cn_e; ++cn) {
+    // for (typename std::vector<MsgContainer>::const_iterator cn = r_ptr->Children.begin(), cn_e = r_ptr->Children.end(); cn != cn_e; ++cn) {
+    for(size_t i = 0; i < r_ptr->numChildren; i++)
+    {
+        cn = &(r_ptr->GpuChildren[i]);
         size_t s_r_c = cn->node->GetPotentialSize();
         CopyLambda(lambdaSrc + cn->lambda, lambdaDst + cn->lambda, s_r_c);
     }
 }
 
 template<typename T, typename S>
-void MPGraph<T,S>::ComputeLocalFunctionUpdate(T* lambdaBase, int r, T epsilon, T multiplier, bool additiveUpdate, FunctionUpdateWorkspaceID& w) {
+__device__ void MPGraph<T,S>::ComputeLocalFunctionUpdate(T* lambdaBase, int r, T epsilon, T multiplier, bool additiveUpdate, FunctionUpdateWorkspaceID& w) {
     assert(additiveUpdate==true);
-    MPNode* r_ptr = Graph[r];
+    GpuMPNode* r_ptr = deviceGraph[r];
     size_t s_r_e = r_ptr->GetPotentialSize();
 
     T c_r = r_ptr->c_r;
@@ -666,15 +761,25 @@ void MPGraph<T,S>::ComputeLocalFunctionUpdate(T* lambdaBase, int r, T epsilon, T
         mem[s_r] *= frac;
     }
 
-    for (typename std::vector<MsgContainer>::iterator p = r_ptr->Parents.begin(), p_e = r_ptr->Parents.end(); p != p_e; ++p) {
+    // for (typename std::vector<MsgContainer>::iterator p = r_ptr->Parents.begin(), p_e = r_ptr->Parents.end(); p != p_e; ++p) {
+    for(size_t i = 0; i < r_ptr->numParents; i++)
+    {
         for (size_t s_r = 0; s_r < s_r_e; ++s_r) {
-            lambdaBase[p->lambda+s_r] = -mem[s_r];
+            lambdaBase[r_ptr->GpuParents[i].lambda+s_r] = -mem[s_r];
         }
     }
 
-    for (typename std::vector<MsgContainer>::const_iterator c = r_ptr->Children.begin(), c_e = r_ptr->Children.end(); c != c_e; ++c) {
+    // for (typename std::vector<MsgContainer>::const_iterator c = r_ptr->Children.begin(), c_e = r_ptr->Children.end(); c != c_e; ++c)
+    GpuMsgContainer* c;
+    for(size_t i = 0; i < r_ptr->numChildren; i++)
+    {
+        c = &(r_ptr->GpuChildren[i]);
         size_t s_r_c = c->node->GetPotentialSize();
-        std::fill_n(lambdaBase+c->lambda, s_r_c, T(0));
+        for(size_t i = 0; i < s_r_c; i++)
+        {
+            lambdaBase[c->lambda + i] = T(0);
+        }
+        // std::fill_n(lambdaBase+c->lambda, s_r_c, T(0));
         for(size_t s_r = 0;s_r < s_r_e;++s_r) {
             lambdaBase[c->lambda+c->Translator[s_r]] += mem[s_r];
         }
@@ -682,21 +787,29 @@ void MPGraph<T,S>::ComputeLocalFunctionUpdate(T* lambdaBase, int r, T epsilon, T
 }
 
 template<typename T, typename S>
-void MPGraph<T,S>::UpdateLocalFunction(T* lambdaBase, T* lambdaGlobal, int r, bool additiveUpdate) {
+__device__ void MPGraph<T,S>::UpdateLocalFunction(T* lambdaBase, T* lambdaGlobal, int r, bool additiveUpdate) {
     if (lambdaBase == lambdaGlobal) {
         return;
     }
-    MPNode* r_ptr = Graph[r];
+    GpuMPNode* r_ptr = deviceGraph[r];
     size_t s_r_e = r_ptr->GetPotentialSize();
 
+    GpuMsgContainer* p;
+    GpuMsgContainer* cn;
     if (additiveUpdate) {
-        for (typename std::vector<MsgContainer>::const_iterator p = r_ptr->Parents.begin(), p_e = r_ptr->Parents.end(); p != p_e; ++p) {
+        // for (typename std::vector<MsgContainer>::const_iterator p = r_ptr->Parents.begin(), p_e = r_ptr->Parents.end(); p != p_e; ++p)
+        for(size_t i = 0; i < r_ptr->numParents; i++)
+        {
+            p = &(r_ptr->GpuParents[i]);
             for (size_t s_r = 0; s_r != s_r_e; ++s_r) {
                 lambdaGlobal[p->lambda + s_r] += lambdaBase[p->lambda + s_r];
             }
         }
 
-        for (typename std::vector<MsgContainer>::const_iterator cn = r_ptr->Children.begin(), cn_e = r_ptr->Children.end(); cn != cn_e; ++cn) {
+        // for (typename std::vector<MsgContainer>::const_iterator cn = r_ptr->Children.begin(), cn_e = r_ptr->Children.end(); cn != cn_e; ++cn)
+        for(size_t i = 0; i < r_ptr->numChildren; i++)
+        {
+            cn = &(r_ptr->GpuChildren[i]);
             size_t s_r_c = cn->node->GetPotentialSize();
             for(size_t s_c = 0; s_c != s_r_c; ++s_c) {
                 lambdaGlobal[cn->lambda + s_c] += lambdaBase[cn->lambda + s_c];
@@ -712,28 +825,44 @@ void MPGraph<T,S>::UpdateLocalFunction(T* lambdaBase, T* lambdaGlobal, int r, bo
 //
 
 template<typename T, typename S>
-void MPGraph<T,S>::CopyMessagesForEdge(T* lambdaSrc, T* lambdaDst, int e) const {
-    EdgeID* edge = Edges[e];
-    MPNode* r_ptr = edge->childPtr->node;
-    MPNode* p_ptr = edge->parentPtr->node;
+__device__  void MPGraph<T,S>::CopyMessagesForEdge(T* lambdaSrc, T* lambdaDst, int e) const {
+    GpuEdgeID* edge = deviceEdges[e];
+    GpuMPNode* r_ptr = edge->childPtr->node;
+    GpuMPNode* p_ptr = edge->parentPtr->node;
 
     size_t s_r_e = r_ptr->GetPotentialSize();
     size_t s_p_e = p_ptr->GetPotentialSize();
 
-    for (typename std::vector<MsgContainer>::const_iterator pn = r_ptr->Parents.begin(), pn_e = r_ptr->Parents.end(); pn != pn_e; ++pn) {
+    // for (typename std::vector<MsgContainer>::const_iterator pn = r_ptr->Parents.begin(), pn_e = r_ptr->Parents.end(); pn != pn_e; ++pn)
+    GpuMsgContainer* pn;
+    GpuMsgContainer* cn;
+    GpuMsgContainer* p_hat;
+    GpuMsgContainer* c_hat;
+    for(size_t i = 0; i < r_ptr->numParents; i++)
+    {
+        pn = &(r_ptr->GpuParents[i]);
         CopyLambda(lambdaSrc + pn->lambda, lambdaDst + pn->lambda, s_r_e);
     }
 
-    for (typename std::vector<MsgContainer>::const_iterator cn = r_ptr->Children.begin(), cn_e = r_ptr->Children.end(); cn != cn_e; ++cn) {
+    // for (typename std::vector<MsgContainer>::const_iterator cn = r_ptr->Children.begin(), cn_e = r_ptr->Children.end(); cn != cn_e; ++cn)
+    for(size_t i = 0; i < r_ptr->numChildren; i++)
+    {
+        cn = &(r_ptr->GpuChildren[i]);
         size_t s_r_c = cn->node->GetPotentialSize();
         CopyLambda(lambdaSrc + cn->lambda, lambdaDst + cn->lambda, s_r_c);
     }
 
-    for (typename std::vector<MsgContainer>::const_iterator p_hat = p_ptr->Parents.begin(), p_hat_e = p_ptr->Parents.end(); p_hat != p_hat_e; ++p_hat) {
+    // for (typename std::vector<MsgContainer>::const_iterator p_hat = p_ptr->Parents.begin(), p_hat_e = p_ptr->Parents.end(); p_hat != p_hat_e; ++p_hat)
+    for(size_t i = 0; i < r_ptr->numParents; i++)
+    {
+        p_hat = &(p_ptr->GpuParents[i]);
         CopyLambda(lambdaSrc + p_hat->lambda, lambdaDst + p_hat->lambda, s_p_e);
     }
 
-    for (typename std::vector<MsgContainer>::const_iterator c_hat = p_ptr->Children.begin(), c_hat_e = p_ptr->Children.end(); c_hat != c_hat_e; ++c_hat) {
+    // for (typename std::vector<MsgContainer>::const_iterator c_hat = p_ptr->Children.begin(), c_hat_e = p_ptr->Children.end(); c_hat != c_hat_e; ++c_hat)
+    for(size_t i = 0; i < r_ptr->numChildren; i++)
+    {
+        c_hat = &(p_ptr->GpuChildren[i]);
         if (c_hat->node != r_ptr) {
             size_t s_r_pc = c_hat->node->GetPotentialSize();
             CopyLambda(lambdaSrc + c_hat->lambda, lambdaDst + c_hat->lambda, s_r_pc);
@@ -743,20 +872,33 @@ void MPGraph<T,S>::CopyMessagesForEdge(T* lambdaSrc, T* lambdaDst, int e) const 
 
 
 template<typename T, typename S>
-void MPGraph<T,S>::CopyMessagesForStar(T* lambdaSrc, T* lambdaDst, int r) const {
-    MPNode* r_ptr = Graph[ValidRegionMapping[r]];
+__device__  void MPGraph<T,S>::CopyMessagesForStar(T* lambdaSrc, T* lambdaDst, int r) const {
+    GpuMPNode* r_ptr = deviceGraph[deviceValidRegionMapping[r]];
     size_t s_r_e = r_ptr->GetPotentialSize();
 
-    for (typename std::vector<MsgContainer>::const_iterator pn = r_ptr->Parents.begin(), pn_e = r_ptr->Parents.end(); pn != pn_e; ++pn) {
+    GpuMsgContainer* pn;
+    GpuMsgContainer* cn;
+    GpuMsgContainer* p_hat;
+    GpuMsgContainer* c_hat;
+    // for (typename std::vector<MsgContainer>::const_iterator pn = r_ptr->Parents.begin(), pn_e = r_ptr->Parents.end(); pn != pn_e; ++pn)
+    for(size_t i = 0; i < r_ptr->numParents; i++)
+    {
+        pn = &(r_ptr->GpuParents[i]);
         CopyLambda(lambdaSrc + pn->lambda, lambdaDst + pn->lambda, s_r_e);
 
-        MPNode* p_ptr = pn->node;
+        GpuMPNode* p_ptr = pn->node;
         size_t s_p_e = p_ptr->GetPotentialSize();
-        for (typename std::vector<MsgContainer>::const_iterator p_hat = p_ptr->Parents.begin(), p_hat_e = p_ptr->Parents.end(); p_hat != p_hat_e; ++p_hat) {
+        // for (typename std::vector<MsgContainer>::const_iterator p_hat = p_ptr->Parents.begin(), p_hat_e = p_ptr->Parents.end(); p_hat != p_hat_e; ++p_hat)
+        for(size_t j = 0; j < r_ptr->numParents; j++)
+        {
+            p_hat = &(r_ptr->GpuParents[j]);
             CopyLambda(lambdaSrc + p_hat->lambda, lambdaDst + p_hat->lambda, s_p_e);
         }
 
-        for (typename std::vector<MsgContainer>::const_iterator c_hat = p_ptr->Children.begin(), c_hat_e = p_ptr->Children.end(); c_hat != c_hat_e; ++c_hat) {
+        // for (typename std::vector<MsgContainer>::const_iterator c_hat = p_ptr->Children.begin(), c_hat_e = p_ptr->Children.end(); c_hat != c_hat_e; ++c_hat)
+        for(size_t j = 0; j < r_ptr->numChildren; i++)
+        {
+            c_hat = &(r_ptr->GpuChildren[j]);
             if (c_hat->node != r_ptr) {
                 size_t s_pc_e = c_hat->node->GetPotentialSize();
                 CopyLambda(lambdaSrc + c_hat->lambda, lambdaDst + c_hat->lambda, s_pc_e);
@@ -764,17 +906,20 @@ void MPGraph<T,S>::CopyMessagesForStar(T* lambdaSrc, T* lambdaDst, int r) const 
         }
     }
 
-    for (typename std::vector<MsgContainer>::const_iterator cn = r_ptr->Children.begin(), cn_e = r_ptr->Children.end(); cn != cn_e; ++cn) {
+    // for (typename std::vector<MsgContainer>::const_iterator cn = r_ptr->Children.begin(), cn_e = r_ptr->Children.end(); cn != cn_e; ++cn)
+    for(size_t i = 0; i < r_ptr->numChildren; i++)
+    {
+        cn = &(r_ptr->GpuChildren[i]);
         size_t s_r_c = cn->node->GetPotentialSize();
         CopyLambda(lambdaSrc + cn->lambda, lambdaDst + cn->lambda, s_r_c);
     }
 }
 
 template<typename T, typename S>
-void MPGraph<T,S>::ReparameterizeEdge(T* lambdaBase, int e, T epsilon, bool additiveUpdate, REdgeWorkspaceID& wspace) {
-    EdgeID* edge = Edges[e];
-    MPNode* r_ptr = edge->childPtr->node;
-    MPNode* p_ptr = edge->parentPtr->node;
+__device__  void MPGraph<T,S>::ReparameterizeEdge(T* lambdaBase, int e, T epsilon, bool additiveUpdate, REdgeWorkspaceID& wspace) {
+    GpuEdgeID* edge = deviceEdges[e];
+    GpuMPNode* r_ptr = edge->childPtr->node;
+    GpuMPNode* p_ptr = edge->parentPtr->node;
 
     size_t s_r_e = r_ptr->GetPotentialSize();
 
@@ -782,7 +927,7 @@ void MPGraph<T,S>::ReparameterizeEdge(T* lambdaBase, int e, T epsilon, bool addi
     T c_r = r_ptr->c_r;
     T frac = T(1) / (c_p + c_r);
 
-    size_t rNumVar = r_ptr->varIX.size();
+    size_t rNumVar = r_ptr->varIXsize;
     //std::vector<S> indivVarStates(rNumVar, 0);
     S* indivVarStates = wspace.IXMem;
     for(S *tmp=indivVarStates, *tmp_e=indivVarStates+rNumVar;tmp!=tmp_e;++tmp) {
@@ -802,7 +947,7 @@ void MPGraph<T,S>::ReparameterizeEdge(T* lambdaBase, int e, T epsilon, bool addi
 
         for (size_t varIX = 0; varIX < rNumVar; ++varIX) {
             ++indivVarStates[varIX];
-            if (indivVarStates[varIX] == Cardinalities[r_ptr->varIX[varIX]]) {
+            if (indivVarStates[varIX] == deviceCardinalities[r_ptr->varIX[varIX]]) {
                 indivVarStates[varIX] = 0;
             } else {
                 break;
@@ -813,9 +958,9 @@ void MPGraph<T,S>::ReparameterizeEdge(T* lambdaBase, int e, T epsilon, bool addi
 
 
 template<typename T, typename S>
-T MPGraph<T,S>::ComputeMu(T* lambdaBase, EdgeID* edge, S* indivVarStates, size_t numVarsOverlap, T epsilon, T* workspaceMem, S* MuIXMem) {
-    MPNode* r_ptr = edge->childPtr->node;
-    MPNode* p_ptr = edge->parentPtr->node;
+__device__ T MPGraph<T,S>::ComputeMu(T* lambdaBase, GpuEdgeID* edge, S* indivVarStates, size_t numVarsOverlap, T epsilon, T* workspaceMem, S* MuIXMem) {
+    GpuMPNode* r_ptr = edge->childPtr->node;
+    GpuMPNode* p_ptr = edge->parentPtr->node;
 
     //size_t numVarsOverlap = indivVarStates.size();
     size_t s_p_stat = 0;
@@ -825,7 +970,7 @@ T MPGraph<T,S>::ComputeMu(T* lambdaBase, EdgeID* edge, S* indivVarStates, size_t
 
     //size_t s_p_e = edge->newVarCumSize.back();
     size_t s_p_e = edge->newVarSize;
-    size_t numVarNew = edge->newVarIX.size();
+    size_t numVarNew = edge->newVarIXsize;
 
     T maxval = -std::numeric_limits<T>::max();
     T ecp = epsilon*p_ptr->c_r;
@@ -842,6 +987,10 @@ T MPGraph<T,S>::ComputeMu(T* lambdaBase, EdgeID* edge, S* indivVarStates, size_t
     }
     S* indivNewVarStates = MuIXMem;
     size_t s_p_real = s_p_stat;
+
+
+    GpuMsgContainer* p_hat;
+    GpuMsgContainer* c_hat;
     for (size_t s_p = 0; s_p != s_p_e; ++s_p) {
         //size_t s_p_real = s_p_stat;
         //for (size_t varIX = 0; varIX<numVarNew; ++varIX) {
@@ -850,11 +999,17 @@ T MPGraph<T,S>::ComputeMu(T* lambdaBase, EdgeID* edge, S* indivVarStates, size_t
 
         T buf = (p_ptr->pot == NULL) ? T(0) : p_ptr->pot[s_p_real];
 
-        for (typename std::vector<MsgContainer>::const_iterator p_hat = p_ptr->Parents.begin(), p_hat_e = p_ptr->Parents.end(); p_hat != p_hat_e; ++p_hat) {
+        // for (typename std::vector<MsgContainer>::const_iterator p_hat = p_ptr->Parents.begin(), p_hat_e = p_ptr->Parents.end(); p_hat != p_hat_e; ++p_hat)
+        for(size_t i = 0; i < p_ptr->numParents; i++)
+        {
+            p_hat = &(p_ptr->GpuParents[i]);
             buf -= lambdaBase[p_hat->lambda+s_p_real];
         }
 
-        for (typename std::vector<MsgContainer>::const_iterator c_hat = p_ptr->Children.begin(), c_hat_e = p_ptr->Children.end(); c_hat != c_hat_e; ++c_hat) {
+        // for (typename std::vector<MsgContainer>::const_iterator c_hat = p_ptr->Children.begin(), c_hat_e = p_ptr->Children.end(); c_hat != c_hat_e; ++c_hat)
+        for(size_t i = 0; i < p_ptr->numChildren; i++)
+        {
+            c_hat = &(p_ptr->GpuChildren[i]);
             if (c_hat->node != r_ptr) {
                 buf += lambdaBase[c_hat->lambda+c_hat->Translator[s_p_real]];
             }
@@ -868,9 +1023,9 @@ T MPGraph<T,S>::ComputeMu(T* lambdaBase, EdgeID* edge, S* indivVarStates, size_t
 
         for (size_t varIX = 0; varIX < numVarNew; ++varIX) {
             ++indivNewVarStates[varIX];
-            if (indivNewVarStates[varIX] == Cardinalities[edge->newVarIX[varIX]]) {
+            if (indivNewVarStates[varIX] == deviceCardinalities[edge->newVarIX[varIX]]) {
                 indivNewVarStates[varIX] = 0;
-                s_p_real -= (Cardinalities[edge->newVarIX[varIX]]-1)*edge->newVarStateMultipliers[varIX];
+                s_p_real -= (deviceCardinalities[edge->newVarIX[varIX]]-1)*edge->newVarStateMultipliers[varIX];
             } else {
                 s_p_real += edge->newVarStateMultipliers[varIX];
                 break;
@@ -891,22 +1046,29 @@ T MPGraph<T,S>::ComputeMu(T* lambdaBase, EdgeID* edge, S* indivVarStates, size_t
 }
 
 template<typename T, typename S>
-void MPGraph<T,S>::UpdateRegion(T* lambdaBase, T* lambdaGlobal, int r, bool additiveUpdate) {
+__device__ void MPGraph<T,S>::UpdateRegion(T* lambdaBase, T* lambdaGlobal, int r, bool additiveUpdate) {
     if (lambdaBase == lambdaGlobal) {
         return;
     }
-    MPNode* r_ptr = Graph[ValidRegionMapping[r]];
+    GpuMPNode* r_ptr = deviceGraph[deviceValidRegionMapping[r]];
 
+    GpuMsgContainer* p;
     size_t s_r_e = r_ptr->GetPotentialSize();
     if (additiveUpdate) {
         for (size_t s_r = 0; s_r != s_r_e; ++s_r) {
-            for (typename std::vector<MsgContainer>::const_iterator p = r_ptr->Parents.begin(), p_e = r_ptr->Parents.end(); p != p_e; ++p) {
+            // for (typename std::vector<MsgContainer>::const_iterator p = r_ptr->Parents.begin(), p_e = r_ptr->Parents.end(); p != p_e; ++p)
+            for(size_t i = 0; i < r_ptr->numParents; i++)
+            {
+                p = &(r_ptr->GpuParents[i]);
                 lambdaGlobal[p->lambda + s_r] += lambdaBase[p->lambda + s_r];
             }
         }
     } else {
         for (size_t s_r = 0; s_r != s_r_e; ++s_r) {
-            for (typename std::vector<MsgContainer>::const_iterator p = r_ptr->Parents.begin(), p_e = r_ptr->Parents.end(); p != p_e; ++p) {
+            // for (typename std::vector<MsgContainer>::const_iterator p = r_ptr->Parents.begin(), p_e = r_ptr->Parents.end(); p != p_e; ++p)
+            for(size_t i = 0; i < r_ptr->numParents; i++)
+            {
+                p = &(r_ptr->GpuParents[i]);
                 lambdaGlobal[p->lambda + s_r] = lambdaBase[p->lambda + s_r];
             }
         }
@@ -914,8 +1076,8 @@ void MPGraph<T,S>::UpdateRegion(T* lambdaBase, T* lambdaGlobal, int r, bool addi
 }
 
 template<typename T, typename S>
-void MPGraph<T,S>::ReparameterizeRegion(T* lambdaBase, int r, T epsilon, bool additiveUpdate, RRegionWorkspaceID& wspace) {
-    MPNode* r_ptr = Graph[ValidRegionMapping[r]];
+__device__ void MPGraph<T,S>::ReparameterizeRegion(T* lambdaBase, int r, T epsilon, bool additiveUpdate, RRegionWorkspaceID& wspace) {
+    GpuMPNode* r_ptr = deviceGraph[deviceValidRegionMapping[r]];
 
     size_t ParentLocalIX;
     T* mu_p_r = wspace.RRegionMem;
@@ -927,21 +1089,30 @@ void MPGraph<T,S>::ReparameterizeRegion(T* lambdaBase, int r, T epsilon, bool ad
     //}
 
     size_t s_r_e = r_ptr->GetPotentialSize();
-    size_t rNumVar = r_ptr->varIX.size();
+    size_t rNumVar = r_ptr->varIXsize;
     //std::vector<S> indivVarStates(rNumVar, 0);
     S* indivVarStates = wspace.IXMem;
     for(S *tmp=indivVarStates, *tmp_e=indivVarStates+rNumVar;tmp!=tmp_e;++tmp) {
         *tmp = 0;
     }
+
+    GpuMsgContainer* p;
+    GpuMsgContainer* c;
     for (size_t s_r = 0; s_r != s_r_e; ++s_r) {
         T phi_r_x_r_prime = (r_ptr->pot == NULL) ? T(0) : r_ptr->pot[s_r];
 
-        for (typename std::vector<MsgContainer>::const_iterator c = r_ptr->Children.begin(), c_e = r_ptr->Children.end(); c != c_e; ++c) {
+        // for (typename std::vector<MsgContainer>::const_iterator c = r_ptr->Children.begin(), c_e = r_ptr->Children.end(); c != c_e; ++c)
+        for(size_t i = 0; i < r_ptr->numChildren; i++)
+        {
+            c = &(r_ptr->GpuChildren[i]);
             phi_r_x_r_prime += lambdaBase[c->lambda+c->Translator[s_r]];
         }
 
         ParentLocalIX = 0;
-        for (typename std::vector<MsgContainer>::const_iterator p = r_ptr->Parents.begin(), p_e = r_ptr->Parents.end(); p != p_e; ++p, ++ParentLocalIX) {
+        // for (typename std::vector<MsgContainer>::const_iterator p = r_ptr->Parents.begin(), p_e = r_ptr->Parents.end(); p != p_e; ++p, ++ParentLocalIX)
+        for(size_t i = 0; i < r_ptr->numParents; ++i, ++ParentLocalIX)
+        {
+            p = &(r_ptr->GpuParents[i]);
             mu_p_r[ParentLocalIX] = ComputeMu(lambdaBase, p->edge, indivVarStates, rNumVar, epsilon, wspace.MuMem, wspace.MuIXMem);
             phi_r_x_r_prime += mu_p_r[ParentLocalIX];
         }
@@ -949,15 +1120,18 @@ void MPGraph<T,S>::ReparameterizeRegion(T* lambdaBase, int r, T epsilon, bool ad
         phi_r_x_r_prime /= sum_c_p;
 
         ParentLocalIX = 0;
-        for (typename std::vector<MsgContainer>::const_iterator p = r_ptr->Parents.begin(), p_e = r_ptr->Parents.end(); p != p_e; ++p, ++ParentLocalIX) {
-            MPNode* ptr = p->node;//ptr points on parent, i.e., ptr->c_r = c_p!!!
+        // for (typename std::vector<MsgContainer>::const_iterator p = r_ptr->Parents.begin(), p_e = r_ptr->Parents.end(); p != p_e; ++p, ++ParentLocalIX)
+        for(size_t i = 0; i < r_ptr->numParents; i++)
+        {
+            p = &(r_ptr->GpuParents[i]);
+            GpuMPNode* ptr = p->node;//ptr points on parent, i.e., ptr->c_r = c_p!!!
             T value = ptr->c_r*phi_r_x_r_prime - mu_p_r[ParentLocalIX];
             lambdaBase[p->lambda+s_r] = ((additiveUpdate)?value-lambdaBase[p->lambda+s_r]:value);//the employed normalization is commutative
         }
 
         for (size_t varIX = 0; varIX < rNumVar; ++varIX) {
             ++indivVarStates[varIX];
-            if (indivVarStates[varIX] == Cardinalities[r_ptr->varIX[varIX]]) {
+            if (indivVarStates[varIX] == deviceCardinalities[r_ptr->varIX[varIX]]) {
                 indivVarStates[varIX] = 0;
             } else {
                 break;
@@ -965,7 +1139,10 @@ void MPGraph<T,S>::ReparameterizeRegion(T* lambdaBase, int r, T epsilon, bool ad
         }
     }
 
-    for (typename std::vector<MsgContainer>::const_iterator p = r_ptr->Parents.begin(), p_e = r_ptr->Parents.end(); p != p_e; ++p) {
+    // for (typename std::vector<MsgContainer>::const_iterator p = r_ptr->Parents.begin(), p_e = r_ptr->Parents.end(); p != p_e; ++p)
+    for(size_t i = 0; i < r_ptr->numParents; ++i)
+    {
+        p = &(r_ptr->GpuParents[i]);
         for (size_t s_r = s_r_e - 1; s_r != 0; --s_r) {
             lambdaBase[p->lambda+s_r] -= lambdaBase[p->lambda];
         }
@@ -974,7 +1151,30 @@ void MPGraph<T,S>::ReparameterizeRegion(T* lambdaBase, int r, T epsilon, bool ad
 }
 
 template<typename T, typename S>
-T MPGraph<T,S>::ComputeReparameterizationPotential(T* lambdaBase, const MPNode* const r_ptr, const S s_r) const {
+__device__ T MPGraph<T,S>::ComputeReparameterizationPotential(T* lambdaBase, const GpuMPNode* const r_ptr, const S s_r) const {
+    T potVal = ((r_ptr->pot != NULL) ? r_ptr->pot[s_r] : T(0));
+
+    GpuMsgContainer* pn;
+    GpuMsgContainer* cn;
+    // for (typename std::vector<MsgContainer>::const_iterator pn = r_ptr->Parents.begin(), pn_e = r_ptr->Parents.end(); pn != pn_e; ++pn)
+    for(size_t i = 0; i < r_ptr->numParents; ++i)
+    {
+        pn = &(r_ptr->GpuParents[i]);
+        potVal -= lambdaBase[pn->lambda+s_r];
+    }
+
+    // for (typename std::vector<MsgContainer>::const_iterator cn = r_ptr->Children.begin(), cn_e = r_ptr->Children.end(); cn != cn_e; ++cn)
+    for(size_t i = 0; i < r_ptr->numChildren; i++)
+    {
+        pn = &(r_ptr->GpuChildren[i]);
+        potVal += lambdaBase[cn->lambda+cn->Translator[s_r]];
+    }
+
+    return potVal;
+}
+
+template<typename T, typename S>
+T MPGraph<T,S>::HostComputeReparameterizationPotential(T* lambdaBase, const MPNode* const r_ptr, const S s_r) const {
     T potVal = ((r_ptr->pot != NULL) ? r_ptr->pot[s_r] : T(0));
 
     for (typename std::vector<MsgContainer>::const_iterator pn = r_ptr->Parents.begin(), pn_e = r_ptr->Parents.end(); pn != pn_e; ++pn) {
@@ -988,12 +1188,16 @@ T MPGraph<T,S>::ComputeReparameterizationPotential(T* lambdaBase, const MPNode* 
     return potVal;
 }
 
+
 template<typename T, typename S>
-T MPGraph<T,S>::ComputeDual(T* lambdaBase, T epsilon, DualWorkspaceID& dw) const {
+__device__ T MPGraph<T,S>::ComputeDual(T* lambdaBase, T epsilon, DualWorkspaceID& dw) const {
     T dual = T(0);
 
-    for (typename std::vector<MPNode*>::const_iterator r = Graph.begin(), r_e = Graph.end(); r != r_e; ++r) {
-        MPNode* r_ptr = *r;
+
+    // for (typename std::vector<MPNode*>::const_iterator r = Graph.begin(), r_e = Graph.end(); r != r_e; ++r)
+    for(size_t i = 0; i < deviceNodes; i++)
+    {
+        GpuMPNode* r_ptr = deviceGraph[i];
         T ecr = epsilon*r_ptr->c_r;
         size_t s_r_e = r_ptr->GetPotentialSize();
 
@@ -1025,15 +1229,20 @@ T MPGraph<T,S>::ComputeDual(T* lambdaBase, T epsilon, DualWorkspaceID& dw) const
 }
 
 template<typename T, typename S>
-size_t MPGraph<T,S>::GetLambdaSize() const {
+__device__ size_t MPGraph<T,S>::GetLambdaSize() const {
     return LambdaSize;
 }
 
 template<typename T, typename S>
-void MPGraph<T,S>::GradientUpdateEdge(T* lambdaBase, int e, T epsilon, T stepSize, bool additiveUpdate, GEdgeWorkspaceID& gew) {
-    EdgeID* edge = Edges[e];
-    MPNode* r_ptr = edge->childPtr->node;
-    MPNode* p_ptr = edge->parentPtr->node;
+size_t MPGraph<T,S>::HostGetLambdaSize() const {
+    return LambdaSize;
+}
+
+template<typename T, typename S>
+__device__ void MPGraph<T,S>::GradientUpdateEdge(T* lambdaBase, int e, T epsilon, T stepSize, bool additiveUpdate, GEdgeWorkspaceID& gew) {
+    GpuEdgeID* edge = deviceEdges[e];
+    GpuMPNode* r_ptr = edge->childPtr->node;
+    GpuMPNode* p_ptr = edge->parentPtr->node;
 
     size_t s_r_e = r_ptr->GetPotentialSize();
     T* mem_r = gew.mem1;
@@ -1060,7 +1269,7 @@ void MPGraph<T,S>::GradientUpdateEdge(T* lambdaBase, int e, T epsilon, T stepSiz
 }
 
 template<typename T, typename S>
-void MPGraph<T,S>::ComputeBeliefForRegion(MPNode* r_ptr, T* lambdaBase, T epsilon, T* mem, size_t s_r_e) {
+__device__ void MPGraph<T,S>::ComputeBeliefForRegion(GpuMPNode* r_ptr, T* lambdaBase, T epsilon, T* mem, size_t s_r_e) {
     T ecr = epsilon*r_ptr->c_r;
 
     T maxVal = -std::numeric_limits<T>::max();
@@ -1093,12 +1302,14 @@ void MPGraph<T,S>::ComputeBeliefForRegion(MPNode* r_ptr, T* lambdaBase, T epsilo
 }
 
 template<typename T, typename S>
-size_t MPGraph<T,S>::ComputeBeliefs(T* lambdaBase, T epsilon, T** belPtr, bool OnlyUnaries) {
+__device__ size_t MPGraph<T,S>::ComputeBeliefs(T* lambdaBase, T epsilon, T** belPtr, bool OnlyUnaries) {
     size_t BeliefSize = 0;
-    for (typename std::vector<MPNode*>::const_iterator r = Graph.begin(), r_e = Graph.end(); r != r_e; ++r) {
-        MPNode* r_ptr = *r;
+    // for (typename std::vector<MPNode*>::const_iterator r = Graph.begin(), r_e = Graph.end(); r != r_e; ++r)
+    for(size_t i = 0; i < deviceNodes; i++)
+    {
+        GpuMPNode* r_ptr = deviceGraph[i];
         size_t s_r_e = r_ptr->GetPotentialSize();
-        size_t numVars = r_ptr->varIX.size();
+        size_t numVars = r_ptr->varIXsize;
         if ((OnlyUnaries&&numVars == 1) || !OnlyUnaries) {
             BeliefSize += s_r_e;
         }
@@ -1110,9 +1321,11 @@ size_t MPGraph<T,S>::ComputeBeliefs(T* lambdaBase, T epsilon, T** belPtr, bool O
         *belPtr = beliefs;
     }
 
-    for (typename std::vector<MPNode*>::const_iterator r = Graph.begin(), r_e = Graph.end(); r != r_e; ++r) {
-        MPNode* r_ptr = *r;
-        size_t numVars = r_ptr->varIX.size();
+    // for (typename std::vector<MPNode*>::const_iterator r = Graph.begin(), r_e = Graph.end(); r != r_e; ++r)
+    for(size_t i = 0; i < deviceNodes; i++)
+    {
+        GpuMPNode* r_ptr = deviceGraph[i];
+        size_t numVars = r_ptr->varIXsize;
         if (OnlyUnaries&&numVars > 1) {
             continue;
         }
@@ -1128,21 +1341,27 @@ size_t MPGraph<T,S>::ComputeBeliefs(T* lambdaBase, T epsilon, T** belPtr, bool O
 }
 
 template<typename T, typename S>
-void MPGraph<T,S>::Marginalize(T* curBel, T* oldBel, EdgeID* edge, const std::vector<S>& indivVarStates, T& marg_new, T& marg_old) {
+__device__  void MPGraph<T,S>::Marginalize(T* curBel, T* oldBel, GpuEdgeID* edge, const S* indivVarStates, size_t indivVarStatesLength, T& marg_new, T& marg_old) {
     //MPNode* r_ptr = edge->childPtr->node;
     //MPNode* p_ptr = edge->parentPtr->node;
 
-    size_t numVarsOverlap = indivVarStates.size();
+    size_t numVarsOverlap = indivVarStatesLength;
     size_t s_p_stat = 0;
     for (size_t k = 0; k<numVarsOverlap; ++k) {
         s_p_stat += indivVarStates[k]*edge->rStateMultipliers[k];
     }
 
     size_t s_p_e = edge->newVarSize;
-    size_t numVarNew = edge->newVarIX.size();
+    size_t numVarNew = edge->newVarIXsize;
 
     //individual vars;
-    std::vector<S> indivNewVarStates(numVarNew, 0);
+    // std::vector<S> indivNewVarStates(numVarNew, 0);
+    S* indivNewVarStates = new S[numVarNew];
+    for(size_t i = 0; i < numVarNew; i++)
+    {
+        indivNewVarStates[i] = 0;
+    }
+
     for (size_t s_p = 0; s_p != s_p_e; ++s_p) {
         size_t s_p_real = s_p_stat;
         for (size_t varIX = 0; varIX<numVarNew; ++varIX) {
@@ -1154,43 +1373,60 @@ void MPGraph<T,S>::Marginalize(T* curBel, T* oldBel, EdgeID* edge, const std::ve
 
         for (size_t varIX = 0; varIX < numVarNew; ++varIX) {
             ++indivNewVarStates[varIX];
-            if (indivNewVarStates[varIX] == Cardinalities[edge->newVarIX[varIX]]) {
+            if (indivNewVarStates[varIX] == deviceCardinalities[edge->newVarIX[varIX]]) {
                 indivNewVarStates[varIX] = 0;
             } else {
                 break;
             }
         }
     }
+
+    // recycle allocated content
+    delete [] indivNewVarStates;
 }
 
 template<typename T, typename S>
-T MPGraph<T,S>::ComputeImprovement(T* curBel, T* oldBel) {//not efficient
+__device__ T MPGraph<T,S>::ComputeImprovement(T* curBel, T* oldBel) {//not efficient
     T imp = T(0);
+    GpuMsgContainer* pn;
 
-    for (typename std::vector<MPNode*>::iterator r = Graph.begin(), r_e = Graph.end(); r != r_e; ++r) {
-        MPNode* r_ptr = *r;
+    // for (typename std::vector<MPNode*>::iterator r = Graph.begin(), r_e = Graph.end(); r != r_e; ++r)
+    for(size_t i = 0; i < deviceNodes; i++)
+    {
+        GpuMPNode* r_ptr = deviceGraph[i];
         size_t s_r_e = r_ptr->GetPotentialSize();
         size_t belIX_r = ((T*)r_ptr->tmp) - curBel;
 
-        for (typename std::vector<MsgContainer>::const_iterator pn = r_ptr->Parents.begin(), pn_e = r_ptr->Parents.end(); pn != pn_e; ++pn) {
-            MPNode* p_ptr = pn->node;
+        // for (typename std::vector<MsgContainer>::const_iterator pn = r_ptr->Parents.begin(), pn_e = r_ptr->Parents.end(); pn != pn_e; ++pn)
+        for(size_t j = 0; j < r_ptr->numParents; j++)
+        {
+            pn = &(r_ptr->GpuParents[j]);
+            GpuMPNode* p_ptr = pn->node;
             size_t belIX_p = ((T*)p_ptr->tmp) - curBel;
 
             T v1 = 0;
             T v2 = 0;
-            size_t rNumVar = r_ptr->varIX.size();
-            std::vector<S> indivVarStates(rNumVar, 0);
-            for(size_t s_r=0;s_r<s_r_e;++s_r) {
+            size_t rNumVar = r_ptr->varIXsize;
+            S* indivVarStates = new S[rNumVar];
+            for(size_t i = 0; i < rNumVar; i++)
+            {
+                indivVarStates[i] = 0;
+            }
+
+
+            // std::vector<S> indivVarStates(rNumVar, 0);
+            for(size_t s_r=0;s_r<s_r_e;++s_r)
+            {
                 T marg_old = T(0);
                 T marg_new = T(0);
-                Marginalize(curBel + belIX_p, oldBel + belIX_p, pn->edge, indivVarStates, marg_new, marg_old);
+                Marginalize(curBel + belIX_p, oldBel + belIX_p, pn->edge, indivVarStates, rNumVar, marg_new, marg_old);
 
-                v1 += curBel[belIX_r+s_r]*std::sqrt(marg_old/oldBel[belIX_r+s_r]);
-                v2 += marg_new*std::sqrt(oldBel[belIX_r+s_r]/marg_old);
+                v1 += curBel[belIX_r+s_r]*sqrtf(marg_old/oldBel[belIX_r+s_r]);
+                v2 += marg_new*sqrtf(oldBel[belIX_r+s_r]/marg_old);
 
                 for (size_t varIX = 0; varIX < rNumVar; ++varIX) {
                     ++indivVarStates[varIX];
-                    if (indivVarStates[varIX] == Cardinalities[r_ptr->varIX[varIX]]) {
+                    if (indivVarStates[varIX] == deviceCardinalities[r_ptr->varIX[varIX]]) {
                         indivVarStates[varIX] = 0;
                     } else {
                         break;
@@ -1198,7 +1434,10 @@ T MPGraph<T,S>::ComputeImprovement(T* curBel, T* oldBel) {//not efficient
                 }
             }
 
-            imp += std::log(v1) + std::log(v2);
+
+            imp += logf(v1) + logf(v2);
+
+            delete [] indivVarStates;
         }
     }
 
@@ -1206,22 +1445,22 @@ T MPGraph<T,S>::ComputeImprovement(T* curBel, T* oldBel) {//not efficient
 }
 
 template<typename T, typename S>
-void MPGraph<T,S>::DeleteBeliefs() {
-    MPNode* r_ptr = *Graph.begin();
-    delete[]((float*)r_ptr->tmp);
+__device__ void MPGraph<T,S>::DeleteBeliefs() {
+    GpuMPNode* r_ptr = deviceGraph[0];
+    delete[]((T*)r_ptr->tmp);
 }
 
 
 template<typename T, typename S>
 ThreadSync<T,S>::ThreadSync(int nT, T* lambdaGlobal, T epsilon, MPGraph<T, S>* g) : state(NONE), numThreads(nT), lambdaGlobal(lambdaGlobal), epsilon(epsilon), g(g), currentlyStoppedThreads(0), prevDual(std::numeric_limits<T>::max())  {
-    dw = g->AllocateDualWorkspaceMem(epsilon);
+    dw = g->HostAllocateDualWorkspaceMem(epsilon);
     state = INIT;
-    LambdaForNoSync.assign(g->GetLambdaSize(),0);
+    LambdaForNoSync.assign(g->HostGetLambdaSize(),0);
 }
 
 template<typename T, typename S>
 ThreadSync<T,S>::~ThreadSync() {
-    g->DeAllocateDualWorkspaceMem(dw);
+    g->HostDeAllocateDualWorkspaceMem(dw);
 }
 
 template<typename T, typename S>
@@ -1235,7 +1474,7 @@ bool ThreadSync<T,S>::checkSync() {
         } else if (currentlyStoppedThreads == numThreads - 1) {
             double timeMS = CTmr.Stop()*1000.;
             //std::cout << timeMS << "; " << CTmr1.Stop()*1000. << "; ";
-            T dualVal = g->ComputeDual(lambdaGlobal, epsilon, dw);
+            T dualVal = g->HostComputeDual(lambdaGlobal, epsilon, dw);
             //std::cout << timeMS <<"; " << CTmr1.Stop()*1000. << "; " << std::setprecision(15) << dualVal << std::endl;
             std::cout << timeMS <<"; " << CTmr1.Stop()*1000. << "; " << dualVal << std::endl;
             //if (dualVal>prevDual) {
@@ -1292,7 +1531,7 @@ void ThreadSync<T,S>::ComputeDualNoSync() {
     std::cout << "line 1018" << std::endl;
     std::copy(lambdaGlobal, lambdaGlobal+LambdaForNoSync.size(), &LambdaForNoSync[0]);
     std::cout << "line 1020" << std::endl;
-    T dualVal = g->ComputeDual(&LambdaForNoSync[0], epsilon, dw);
+    T dualVal = g->HostComputeDual(&LambdaForNoSync[0], epsilon, dw);
     std::cout << timeMS <<"; " << CTmr1.Stop()*1000. << "; " << dualVal << std::endl;
 }
 
@@ -1303,7 +1542,7 @@ void ThreadSync<T,S>::CudaComputeDualNoSync() {
     std::cout << "line 1018" << std::endl;
     std::copy(lambdaGlobal, lambdaGlobal+LambdaForNoSync.size(), &LambdaForNoSync[0]);
     std::cout << "line 1020" << std::endl;
-    T dualVal = g->ComputeDual(&LambdaForNoSync[0], epsilon, dw);
+    T dualVal = g->HostComputeDual(&LambdaForNoSync[0], epsilon, dw);
     std::cout << timeMS <<"; " << CTmr1.Stop()*1000. << "; " << dualVal << std::endl;
 }
 
@@ -1324,53 +1563,53 @@ bool ThreadSync<T,S>::startFunc() {
 
 template<typename T, typename S>
 ThreadWorker<T,S>::ThreadWorker(ThreadSync<T, S>* ts, MPGraph<T, S>* g, T epsilon, int randomSeed, T* lambdaGlobal, T* stepsize) : cnt(0), ts(ts), thread_(NULL), g(g), epsilon(epsilon), randomSeed(randomSeed), lambdaGlobal(lambdaGlobal), stepsize(stepsize) {
-    msgSize = g->GetLambdaSize();
-    assert(msgSize > 0);
-    lambdaLocal.assign(msgSize, T(0));
-    lambdaBase = &lambdaLocal[0];
-
-    //REdgeWorkspaceID* test;
-
-    // see if cuda works
-
-
-    #if WHICH_FUNC==1
-        rrw = g->AllocateReparameterizeRegionWorkspaceMem(epsilon);
-        uid = new std::uniform_int_distribution<int>(0, g->NumberOfRegionsWithParents() - 1);
-    #elif WHICH_FUNC==2
-        rew = g->AllocateReparameterizeEdgeWorkspaceMem(epsilon);
-        uid = new std::uniform_int_distribution<int>(0, g->NumberOfEdges() - 1);
-    #elif WHICH_FUNC==3
-        fw = g->AllocateFunctionUpdateWorkspaceMem();
-        uid = new std::uniform_int_distribution<int>(0, g->NumberOfRegionsTotal()-1);
-    #endif
-
-    eng.seed(randomSeed);
+    // msgSize = g->GetLambdaSize();
+    // assert(msgSize > 0);
+    // lambdaLocal.assign(msgSize, T(0));
+    // lambdaBase = &lambdaLocal[0];
+    //
+    // //REdgeWorkspaceID* test;
+    //
+    // // see if cuda works
+    //
+    //
+    // #if WHICH_FUNC==1
+    //     rrw = g->AllocateReparameterizeRegionWorkspaceMem(epsilon);
+    //     uid = new std::uniform_int_distribution<int>(0, g->NumberOfRegionsWithParents() - 1);
+    // #elif WHICH_FUNC==2
+    //     rew = g->AllocateReparameterizeEdgeWorkspaceMem(epsilon);
+    //     uid = new std::uniform_int_distribution<int>(0, g->NumberOfEdges() - 1);
+    // #elif WHICH_FUNC==3
+    //     fw = g->AllocateFunctionUpdateWorkspaceMem();
+    //     uid = new std::uniform_int_distribution<int>(0, g->NumberOfRegionsTotal()-1);
+    // #endif
+    //
+    // eng.seed(randomSeed);
 }
 
 template<typename T, typename S>
 ThreadWorker<T,S>::~ThreadWorker() {
-#if WHICH_FUNC==1
-    g->DeAllocateReparameterizeRegionWorkspaceMem(rrw);
-#elif WHICH_FUNC==2
-    g->DeAllocateReparameterizeEdgeWorkspaceMem(rew);
-#elif WHICH_FUNC==3
-    g->DeAllocateFunctionUpdateWorkspaceID(fw);
-#endif
-    if (uid != NULL) {
-        delete uid;
-        uid = NULL;
-    }
-    if (thread_ != NULL) {
-        delete thread_;
-        thread_ = NULL;
-    }
+// #if WHICH_FUNC==1
+//     g->DeAllocateReparameterizeRegionWorkspaceMem(rrw);
+// #elif WHICH_FUNC==2
+//     g->DeAllocateReparameterizeEdgeWorkspaceMem(rew);
+// #elif WHICH_FUNC==3
+//     g->DeAllocateFunctionUpdateWorkspaceID(fw);
+// #endif
+//     if (uid != NULL) {
+//         delete uid;
+//         uid = NULL;
+//     }
+//     if (thread_ != NULL) {
+//         delete thread_;
+//         thread_ = NULL;
+//     }
 }
 
 template<typename T, typename S>
 void ThreadWorker<T,S>::start() {
-    thread_ = new std::thread(std::bind(&ThreadWorker::run, this));
-    thread_->detach();
+    // thread_ = new std::thread(std::bind(&ThreadWorker::run, this));
+    // thread_->detach();
 }
 
 template<typename T, typename S>
@@ -1380,101 +1619,101 @@ size_t ThreadWorker<T,S>::GetCount() {
 
 template<typename T, typename S>
 void ThreadWorker<T,S>::run() {
-    std::cout << "Thread started" << std::endl;
-    int test = 0;
-    // ts->startFunc();
-    while (ts->checkSync()) {
-
-        #if WHICH_FUNC==1
-                int ix = (*uid)(eng);
-                g->CopyMessagesForStar(lambdaGlobal, lambdaBase, ix);
-                g->ReparameterizeRegion(lambdaBase, ix, epsilon, false, rrw);
-                g->UpdateRegion(lambdaBase, lambdaGlobal, ix, false);
-        #elif WHICH_FUNC==2
-                int ix = (*uid)(eng);
-                g->CopyMessagesForEdge(lambdaGlobal, lambdaBase, ix);
-                g->ReparameterizeEdge(lambdaBase, ix, epsilon, false, rew);
-                g->UpdateEdge(lambdaBase, lambdaGlobal, ix, false);
-        #elif WHICH_FUNC==3
-                int ix = (*uid)(eng);
-                g->CopyMessagesForLocalFunction(lambdaGlobal, lambdaBase, ix);
-                g->ComputeLocalFunctionUpdate(lambdaBase, ix, epsilon, *stepsize, true, fw);
-                g->UpdateLocalFunction(lambdaBase, lambdaGlobal, ix, true);
-
-        #endif
-
-        ++cnt;
-    }
+    // std::cout << "Thread started" << std::endl;
+    // int test = 0;
+    // // ts->startFunc();
+    // while (ts->checkSync()) {
+    //
+    //     #if WHICH_FUNC==1
+    //             int ix = (*uid)(eng);
+    //             g->CopyMessagesForStar(lambdaGlobal, lambdaBase, ix);
+    //             g->ReparameterizeRegion(lambdaBase, ix, epsilon, false, rrw);
+    //             g->UpdateRegion(lambdaBase, lambdaGlobal, ix, false);
+    //     #elif WHICH_FUNC==2
+    //             int ix = (*uid)(eng);
+    //             g->CopyMessagesForEdge(lambdaGlobal, lambdaBase, ix);
+    //             g->ReparameterizeEdge(lambdaBase, ix, epsilon, false, rew);
+    //             g->UpdateEdge(lambdaBase, lambdaGlobal, ix, false);
+    //     #elif WHICH_FUNC==3
+    //             int ix = (*uid)(eng);
+    //             g->CopyMessagesForLocalFunction(lambdaGlobal, lambdaBase, ix);
+    //             g->ComputeLocalFunctionUpdate(lambdaBase, ix, epsilon, *stepsize, true, fw);
+    //             g->UpdateLocalFunction(lambdaBase, lambdaGlobal, ix, true);
+    //
+    //     #endif
+    //
+    //     ++cnt;
+    // }
 }
 
 
 template<typename T, typename S>
 int AsyncRMPThread<T,S>::RunMP(MPGraph<T, S>& g, T epsilon, int numIterations, int numThreads, int WaitTimeInMS) {
-    size_t msgSize = g.GetLambdaSize();
-    if (msgSize == 0) {
-        typename MPGraph<T, S>::DualWorkspaceID dw = g.AllocateDualWorkspaceMem(epsilon);
-        std::cout << "0: " << g.ComputeDual(NULL, epsilon, dw) << std::endl;
-        g.DeAllocateDualWorkspaceMem(dw);
-        return 0;
-    }
-
-    std::cout << std::setprecision(std::numeric_limits<long double>::digits10 + 1);
-
-    lambdaGlobal.assign(msgSize, T(0));
-    T* lambdaGlob = &lambdaGlobal[0];
-
-
-    // thread syncs are dumb - they're used for keeping track of
-    // the state of each thread, which is just totally unncessary.
-    ThreadSync<T, S> sy(numThreads, lambdaGlob, epsilon, &g);
-
-    T stepsize = -0.1;
-    std::vector<ThreadWorker<T, S>*> ex(numThreads, NULL);
-    for (int k = 0; k < numThreads; ++k) {
-        ex[k] = new ThreadWorker<T, S>(&sy, &g, epsilon, k, lambdaGlob, &stepsize);
-    }
-    for (int k = 0; k < numThreads; ++k) {
-        ex[k]->start();
-    }
-
-    while (!sy.startFunc()) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-    }
-    for (int k = 0; k < numIterations; ++k)
-    {
-        std::this_thread::sleep_for(std::chrono::milliseconds(WaitTimeInMS));
-        //sy.interruptFunc();
-        sy.ComputeDualNoSync();
-    }
-    sy.terminateFunc();
-
-    size_t regionUpdates = 0;
-    for(int k=0;k<numThreads;++k) {
-        size_t tmp = ex[k]->GetCount();
-        std::cout << "Thread " << k << ": " << tmp << std::endl;
-        regionUpdates += tmp;
-        delete ex[k];
-    }
-    std::cout << "Region updates: " << regionUpdates << std::endl;
-    std::cout << "Total regions:  " << g.NumberOfRegionsWithParents() << std::endl;
-
-    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-    std::cout << "Terminating program." << std::endl;
+    // size_t msgSize = g.HostGetLambdaSize();
+    // if (msgSize == 0) {
+    //     typename MPGraph<T, S>::DualWorkspaceID dw = g.HostAllocateDualWorkspaceMem(epsilon);
+    //     std::cout << "0: " << g.HostComputeDual(NULL, epsilon, dw) << std::endl;
+    //     g.HostDeAllocateDualWorkspaceMem(dw);
+    //     return 0;
+    // }
+    //
+    // std::cout << std::setprecision(std::numeric_limits<long double>::digits10 + 1);
+    //
+    // lambdaGlobal.assign(msgSize, T(0));
+    // T* lambdaGlob = &lambdaGlobal[0];
+    //
+    //
+    // // thread syncs are dumb - they're used for keeping track of
+    // // the state of each thread, which is just totally unncessary.
+    // ThreadSync<T, S> sy(numThreads, lambdaGlob, epsilon, &g);
+    //
+    // T stepsize = -0.1;
+    // std::vector<ThreadWorker<T, S>*> ex(numThreads, NULL);
+    // for (int k = 0; k < numThreads; ++k) {
+    //     ex[k] = new ThreadWorker<T, S>(&sy, &g, epsilon, k, lambdaGlob, &stepsize);
+    // }
+    // for (int k = 0; k < numThreads; ++k) {
+    //     ex[k]->start();
+    // }
+    //
+    // while (!sy.startFunc()) {
+    //     std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+    // }
+    // for (int k = 0; k < numIterations; ++k)
+    // {
+    //     std::this_thread::sleep_for(std::chrono::milliseconds(WaitTimeInMS));
+    //     //sy.interruptFunc();
+    //     sy.ComputeDualNoSync();
+    // }
+    // sy.terminateFunc();
+    //
+    // size_t regionUpdates = 0;
+    // for(int k=0;k<numThreads;++k) {
+    //     size_t tmp = ex[k]->GetCount();
+    //     std::cout << "Thread " << k << ": " << tmp << std::endl;
+    //     regionUpdates += tmp;
+    //     delete ex[k];
+    // }
+    // std::cout << "Region updates: " << regionUpdates << std::endl;
+    // std::cout << "Total regions:  " << g.NumberOfRegionsWithParents() << std::endl;
+    //
+    // std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+    // std::cout << "Terminating program." << std::endl;
     return 0;
 }
 
 template<typename T, typename S>
 size_t AsyncRMPThread<T,S>::GetBeliefs(MPGraph<T, S>& g, T epsilon, T** belPtr, bool OnlyUnaries) {
-    size_t msgSize = g.GetLambdaSize();
-    if (msgSize == 0) {
-        return g.ComputeBeliefs(NULL, epsilon, belPtr, OnlyUnaries);
-    } else {
-        if (lambdaGlobal.size() != msgSize) {
-            std::cout << "Message size does not fit requirement. Reassigning." << std::endl;
-            lambdaGlobal.assign(msgSize, T(0));
-        }
-        return g.ComputeBeliefs(&lambdaGlobal[0], epsilon, belPtr, OnlyUnaries);
-    }
+    // size_t msgSize = g.GetLambdaSize();
+    // if (msgSize == 0) {
+    //     return g.ComputeBeliefs(NULL, epsilon, belPtr, OnlyUnaries);
+    // } else {
+    //     if (lambdaGlobal.size() != msgSize) {
+    //         std::cout << "Message size does not fit requirement. Reassigning." << std::endl;
+    //         lambdaGlobal.assign(msgSize, T(0));
+    //     }
+    //     return g.ComputeBeliefs(&lambdaGlobal[0], epsilon, belPtr, OnlyUnaries);
+    // }
     return size_t(-1);
 }
 
@@ -1493,25 +1732,25 @@ RMP<T,S>::~RMP()
 template<typename T, typename S>
 int RMP<T,S>::RunMP(MPGraph<T, S>& g, T epsilon)
 {
-    size_t msgSize = g.GetLambdaSize();
-    if (msgSize == 0) {
-        typename MPGraph<T, S>::DualWorkspaceID dw = g.AllocateDualWorkspaceMem(epsilon);
-        std::cout << "0: " << g.ComputeDual(NULL, epsilon, dw) << std::endl;
-        g.DeAllocateDualWorkspaceMem(dw);
-        return 0;
-    }
-
-    std::vector<T> lambdaGlobal(msgSize, T(0));
-
-    typename MPGraph<T, S>::DualWorkspaceID dw = g.AllocateDualWorkspaceMem(epsilon);
-    typename MPGraph<T, S>::RRegionWorkspaceID rrw = g.AllocateReparameterizeRegionWorkspaceMem(epsilon);
-    for (int iter = 0; iter < 20; ++iter) {
-        for (int k = 0; k < int(g.NumberOfRegionsWithParents()); ++k) {
-            g.ReparameterizeRegion(&lambdaGlobal[0], k, epsilon, false, rrw);
-        }
-        std::cout << iter << ": " << g.ComputeDual(&lambdaGlobal[0], epsilon, dw) << std::endl;
-    }
-    g.DeAllocateReparameterizeRegionWorkspaceMem(rrw);
-    g.DeAllocateDualWorkspaceMem(dw);
+    // size_t msgSize = g.GetLambdaSize();
+    // if (msgSize == 0) {
+    //     typename MPGraph<T, S>::DualWorkspaceID dw = g.AllocateDualWorkspaceMem(epsilon);
+    //     std::cout << "0: " << g.ComputeDual(NULL, epsilon, dw) << std::endl;
+    //     g.DeAllocateDualWorkspaceMem(dw);
+    //     return 0;
+    // }
+    //
+    // std::vector<T> lambdaGlobal(msgSize, T(0));
+    //
+    // typename MPGraph<T, S>::DualWorkspaceID dw = g.AllocateDualWorkspaceMem(epsilon);
+    // typename MPGraph<T, S>::RRegionWorkspaceID rrw = g.AllocateReparameterizeRegionWorkspaceMem(epsilon);
+    // for (int iter = 0; iter < 20; ++iter) {
+    //     for (int k = 0; k < int(g.NumberOfRegionsWithParents()); ++k) {
+    //         g.ReparameterizeRegion(&lambdaGlobal[0], k, epsilon, false, rrw);
+    //     }
+    //     std::cout << iter << ": " << g.ComputeDual(&lambdaGlobal[0], epsilon, dw) << std::endl;
+    // }
+    // g.DeAllocateReparameterizeRegionWorkspaceMem(rrw);
+    // g.DeAllocateDualWorkspaceMem(dw);
     return 0;
 }

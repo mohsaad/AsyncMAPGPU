@@ -5,7 +5,7 @@ LFLAGS =
 LLIBS =
 
 NVCC = nvcc
-NVLIBFLAGS = -c -std=c++11 -rdc=true -arch=sm_30
+NVLIBFLAGS = -c -std=c++11 -rdc=true -arch=sm_30 --expt-relaxed-constexpr
 NVFLAGS = -Wno-deprecated-gpu-targets
 NVDEBUG = -g -G
 

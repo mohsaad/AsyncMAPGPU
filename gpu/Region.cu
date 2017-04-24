@@ -58,7 +58,7 @@
 template<typename T, typename S>
 int CudaAsyncRMPThread<T,S>::CudaRunMP(MPGraph<T, S>& g, T epsilon, int numIterations, int numThreads, int WaitTimeInMS) {
 
-    size_t msgSize = g.GetLambdaSize();
+    size_t msgSize = g.HostGetLambdaSize();
 
 
 
@@ -66,9 +66,9 @@ int CudaAsyncRMPThread<T,S>::CudaRunMP(MPGraph<T, S>& g, T epsilon, int numItera
 
     // handle this case later.i
     if (msgSize == 0) {
-        typename MPGraph<T, S>::DualWorkspaceID dw = g.AllocateDualWorkspaceMem(epsilon);
-        std::cout << "0: " << g.ComputeDual(NULL, epsilon, dw) << std::endl;
-        g.DeAllocateDualWorkspaceMem(dw);
+        typename MPGraph<T, S>::DualWorkspaceID dw = g.HostAllocateDualWorkspaceMem(epsilon);
+        std::cout << "0: " << g.HostComputeDual(NULL, epsilon, dw) << std::endl;
+        g.HostDeAllocateDualWorkspaceMem(dw);
         return 0;
     }
     std::cout << std::setprecision(std::numeric_limits<long double>::digits10 + 1);
@@ -168,7 +168,7 @@ int CudaAsyncRMPThread<T,S>::CudaRunMP(MPGraph<T, S>& g, T epsilon, int numItera
     cudaDeviceReset();
 
     std::cout << "Region updates: " << regionUpdates << std::endl;
-    std::cout << "Total regions:  " << g.NumberOfRegionsWithParents() << std::endl;
+    std::cout << "Total regions:  " << g.HostNumberOfRegionsWithParents() << std::endl;
 
     std::this_thread::sleep_for(std::chrono::milliseconds(1000));
     std::cout << "Terminating program." << std::endl;
