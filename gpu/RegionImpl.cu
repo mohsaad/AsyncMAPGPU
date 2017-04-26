@@ -230,8 +230,8 @@ int MPGraph<T,S>::CopyMessageMemory()
 
             // malloc and copy
             gpuErrchk(cudaMemcpy(&(hostNode.GpuParents[j]), &hostContainer, sizeof(hostContainer), cudaMemcpyHostToDevice));
-
-
+	    //CpuGpuMsgMap.insert(std::pair<MsgContainer*, GpuMsgContainer*>(&(Graph[i]->Parents[j]), &(hostNode.GpuParents[j])));
+	    CpuGpuMsgMap[&(Graph[i]->Parents[j])] = &(hostNode.GpuParents[j]);
 
         }
 
@@ -250,7 +250,10 @@ int MPGraph<T,S>::CopyMessageMemory()
             // malloc and copy
             gpuErrchk(cudaMemcpy(&hostNode.GpuChildren[j], &hostContainer, sizeof(hostContainer), cudaMemcpyHostToDevice));
 
-        }
+       	    
+	    CpuGpuMsgMap[&(Graph[i]->Children[j])] = &(hostNode.GpuChildren[j]);
+	    //CpuGpuMsgMap.insert(std::pair<MsgContainer*, GpuMsgContainer*>(&(Graph[i]->Children[j]), &(hostNode.GpuChildren[j])));
+	}
 
 
 	gpuErrchk(cudaMemcpy(gpuNode, &hostNode, sizeof(hostNode), cudaMemcpyHostToDevice));
@@ -258,7 +261,7 @@ int MPGraph<T,S>::CopyMessageMemory()
 
     // copy over edges
     GpuEdgeID* gpuEdge;
-    GpuEdgeID hostEdge {NULL, NULL, NULL, NULL, NULL, 0};
+    GpuEdgeID hostEdge {NULL, NULL, NULL,0, NULL, NULL, 0};
     for(int i = 0; i < Edges.size(); i++)
     {
         gpuEdge = CpuGpuEdgeMap[Edges[i]];
@@ -266,10 +269,14 @@ int MPGraph<T,S>::CopyMessageMemory()
 
         hostEdge.newVarSize = Edges[i]->newVarSize;
         hostEdge.newVarIXsize = Edges[i]->newVarIX.size();
+	hostEdge.childPtr = CpuGpuMsgMap[Edges[i]->childPtr];
+	hostEdge.parentPtr = CpuGpuMsgMap[Edges[i]->parentPtr];
 
         // now, allocate space for the three vectors
         gpuErrchk(cudaMalloc((void**)&(hostEdge.rStateMultipliers), sizeof(S)*Edges[i]->rStateMultipliers.size()));
         gpuErrchk(cudaMemcpy(hostEdge.rStateMultipliers, &(Edges[i]->rStateMultipliers[0]),sizeof(S)*Edges[i]->rStateMultipliers.size(), cudaMemcpyHostToDevice));
+
+	hostEdge.rStateMultipliersSize = Edges[i]->rStateMultipliers.size();
 
         gpuErrchk(cudaMalloc((void**)&hostEdge.newVarStateMultipliers, sizeof(S)*Edges[i]->newVarStateMultipliers.size()));
         gpuErrchk(cudaMemcpy(hostEdge.newVarStateMultipliers, &(Edges[i]->newVarStateMultipliers[0]),sizeof(S)*Edges[i]->newVarStateMultipliers.size(), cudaMemcpyHostToDevice));
@@ -286,8 +293,8 @@ int MPGraph<T,S>::CopyMessageMemory()
     deviceNodes = GpuGraph.size();
     deviceGpuEdges = GpuEdges;
     numEdges = GpuEdges.size();
-    deviceGraph = thrust::raw_pointer_cast(GpuGraph.data());
-    deviceEdges = thrust::raw_pointer_cast(GpuEdges.data());
+    deviceGraph = thrust::raw_pointer_cast(&deviceGpuGraph[0]);
+    deviceEdges = thrust::raw_pointer_cast(&deviceGpuEdges[0]);
 
 
     // cardinalities
@@ -305,8 +312,8 @@ int MPGraph<T,S>::CopyMessageMemory()
     }
 
     // Valid region mapping
-    gpuErrchk(cudaMalloc((void**)deviceValidRegionMapping, sizeof(size_t)*GpuValidRegionMapping.size()));
-    gpuErrchk(cudaMemcpy(deviceValidRegionMapping, &GpuValidRegionMapping[0],sizeof(size_t)*GpuValidRegionMapping.size(), cudaMemcpyHostToDevice));
+    gpuErrchk(cudaMalloc((void**)&deviceValidRegionMapping, sizeof(size_t)*GpuValidRegionMapping.size()));
+    gpuErrchk(cudaMemcpy(deviceValidRegionMapping, &(GpuValidRegionMapping[0]), sizeof(size_t)*GpuValidRegionMapping.size(), cudaMemcpyHostToDevice));
     numValidRegions = GpuValidRegionMapping.size();
 
     return 0;
@@ -319,7 +326,7 @@ int MPGraph<T,S>::AllocateMessageMemory() {
     size_t lambdaOffset = 0;
 
     GpuEdgeID* gpuID = NULL;
-    GpuEdgeID testID{NULL, NULL, NULL, NULL, NULL, 0};
+    GpuEdgeID testID{NULL, NULL, NULL, 0, NULL, NULL, 0};
 
     for (typename std::vector<MPNode*>::iterator r = Graph.begin(), r_e = Graph.end(); r != r_e; ++r) {
         MPNode* r_ptr = *r;
@@ -340,7 +347,7 @@ int MPGraph<T,S>::AllocateMessageMemory() {
                     Edges.push_back(new EdgeID{ &(*pn), &(*cn), std::vector<S>(), std::vector<S>(), std::vector<S>(), 0 });
                     pn->edge = cn->edge = Edges.back();
 
-                    gpuErrchk(cudaMalloc((void**)&gpuID, sizeof(GpuEdgeID)));
+                    gpuErrchk(cudaMalloc((void**)&gpuID, sizeof(testID)));
                     testID.parentPtr = CpuGpuMsgMap[&(*pn)];
                     testID.childPtr = CpuGpuMsgMap[&(*cn)];
 
@@ -853,14 +860,14 @@ __device__  void MPGraph<T,S>::CopyMessagesForEdge(T* lambdaSrc, T* lambdaDst, i
     }
 
     // for (typename std::vector<MsgContainer>::const_iterator p_hat = p_ptr->Parents.begin(), p_hat_e = p_ptr->Parents.end(); p_hat != p_hat_e; ++p_hat)
-    for(size_t i = 0; i < r_ptr->numParents; i++)
+    for(size_t i = 0; i < p_ptr->numParents; i++)
     {
         p_hat = &(p_ptr->GpuParents[i]);
         CopyLambda(lambdaSrc + p_hat->lambda, lambdaDst + p_hat->lambda, s_p_e);
     }
 
     // for (typename std::vector<MsgContainer>::const_iterator c_hat = p_ptr->Children.begin(), c_hat_e = p_ptr->Children.end(); c_hat != c_hat_e; ++c_hat)
-    for(size_t i = 0; i < r_ptr->numChildren; i++)
+    for(size_t i = 0; i < p_ptr->numChildren; i++)
     {
         c_hat = &(p_ptr->GpuChildren[i]);
         if (c_hat->node != r_ptr) {
@@ -927,6 +934,7 @@ __device__  void MPGraph<T,S>::ReparameterizeEdge(T* lambdaBase, int e, T epsilo
     T c_r = r_ptr->c_r;
     T frac = T(1) / (c_p + c_r);
 
+// OOB errpor rght here
     size_t rNumVar = r_ptr->varIXsize;
     //std::vector<S> indivVarStates(rNumVar, 0);
     S* indivVarStates = wspace.IXMem;
@@ -962,7 +970,7 @@ __device__ T MPGraph<T,S>::ComputeMu(T* lambdaBase, GpuEdgeID* edge, S* indivVar
     GpuMPNode* r_ptr = edge->childPtr->node;
     GpuMPNode* p_ptr = edge->parentPtr->node;
 
-    //size_t numVarsOverlap = indivVarStates.size();
+    numVarsOverlap = min(numVarsOverlap, edge->rStateMultipliersSize);
     size_t s_p_stat = 0;
     for (size_t k = 0; k<numVarsOverlap; ++k) {
         s_p_stat += indivVarStates[k]*edge->rStateMultipliers[k];
@@ -997,7 +1005,8 @@ __device__ T MPGraph<T,S>::ComputeMu(T* lambdaBase, GpuEdgeID* edge, S* indivVar
         //	s_p_real += indivNewVarStates[varIX]*edge->newVarStateMultipliers[varIX];
         //}
 
-        T buf = (p_ptr->pot == NULL) ? T(0) : p_ptr->pot[s_p_real];
+	// TOTALLY A HACK TO GET THIS VALUE
+        T buf = ((p_ptr + 16)->pot == NULL) ? T(0) : (p_ptr+16)->pot[s_p_real];
 
         // for (typename std::vector<MsgContainer>::const_iterator p_hat = p_ptr->Parents.begin(), p_hat_e = p_ptr->Parents.end(); p_hat != p_hat_e; ++p_hat)
         for(size_t i = 0; i < p_ptr->numParents; i++)
@@ -1166,7 +1175,7 @@ __device__ T MPGraph<T,S>::ComputeReparameterizationPotential(T* lambdaBase, con
     // for (typename std::vector<MsgContainer>::const_iterator cn = r_ptr->Children.begin(), cn_e = r_ptr->Children.end(); cn != cn_e; ++cn)
     for(size_t i = 0; i < r_ptr->numChildren; i++)
     {
-        pn = &(r_ptr->GpuChildren[i]);
+        cn = &(r_ptr->GpuChildren[i]);
         potVal += lambdaBase[cn->lambda+cn->Translator[s_r]];
     }
 

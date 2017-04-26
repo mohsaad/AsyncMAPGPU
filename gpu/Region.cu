@@ -9,48 +9,48 @@
 // lambdaGlobal: global lambda array
 // runFlag: a flag that controls when we want to terminate the array
 // rangeRandNums: random numbers (defined by the graph)
-// template<typename T, typename S>
-// __global__ void EdgeUpdateKernel(MPGraph<T, S> g, T epsilon, size_t* numThreadUpdates, T* lambdaGlobal, int* runFlag, int numThreads)
-// {
-//     int tx = threadIdx.x + blockIdx.x * blockDim.x;
-//     if(tx < numThreads)
-//     {
-//         int uid;
-//         curandState_t state;
-//         curand_init(clock64(),tx,0,&state);
+template<typename T, typename S>
+ __global__ void EdgeUpdateKernel(MPGraph<T, S> g, T epsilon, size_t* numThreadUpdates, T* lambdaGlobal, int* runFlag, int numThreads)
+{
+     int tx = threadIdx.x + blockIdx.x * blockDim.x;
+     if(tx < numThreads)
+     {
+         int uid;
+         curandState_t state;
+         curand_init(clock64(),tx,0,&state);
+
+         // allocate space for edge workspace
+         typename MPGraph<T, S>::REdgeWorkspaceID rew;
+         rew = g.AllocateReparameterizeEdgeWorkspaceMem(epsilon);
+
+         // allocate an array that will act as our base
+         size_t msgSize = g.GetLambdaSize();
+         T* devLambdaBase = (T*)malloc(msgSize * sizeof(T));
+         memset(devLambdaBase, T(0), sizeof(T) * msgSize);
+
+         int rangeRandNums = g.NumberOfEdges() - 1;
+
+
+         while(*runFlag == 0)
+         {
+         	uid = floorf(curand_uniform(&state) * rangeRandNums);
+            	g.CopyMessagesForEdge(lambdaGlobal, devLambdaBase, uid);
+		g.ReparameterizeEdge(devLambdaBase, uid, epsilon, false, rew);
+		g.UpdateEdge(devLambdaBase, lambdaGlobal, uid, false);
 //
-//         // allocate space for edge workspace
-//         typename MPGraph<T, S>::REdgeWorkspaceID rew;
-//         rew = g.AllocateReparameterizeEdgeWorkspaceMem(epsilon);
-//
-//         // allocate an array that will act as our base
-//         size_t msgSize = g.GetLambdaSize();
-//         T* devLambdaBase = (T*)malloc(msgSize * sizeof(T));
-//         memset(devLambdaBase, T(0), sizeof(T) * msgSize);
-//
-//         int rangeRandNums = g.NumberOfEdges() - 1;
-//
-//
-//         while(*runFlag == 0)
-//         {
-//             uid = floorf(curand_uniform(&state) * rangeRandNums);
-//             g.CopyMessagesForEdge(lambdaGlobal, devLambdaBase, uid);
-//             g.ReparameterizeEdge(devLambdaBase, uid, epsilon, false, rew);
-//             g.UpdateEdge(devLambdaBase, lambdaGlobal, uid, false);
-//
-//             numThreadUpdates[tx]++;
-//             __syncthreads();
-//         }
+		numThreadUpdates[tx]++;
+		 __syncthreads();
+         }
 //
 //         // free device pointers
-//         g.DeAllocateReparameterizeEdgeWorkspaceMem(rew);
-//         free(devLambdaBase);
+         g.DeAllocateReparameterizeEdgeWorkspaceMem(rew);
+         free(devLambdaBase);
 //
-//         atomicAdd(runFlag, numThreads);
+         atomicAdd(runFlag, numThreads);
 //
-//     }
+     }
 //
-// }
+}
 
 
 
@@ -125,7 +125,7 @@ int CudaAsyncRMPThread<T,S>::CudaRunMP(MPGraph<T, S>& g, T epsilon, int numItera
 
     //CTmr.start();
     // start the kernel
-    //EdgeUpdateKernel<<<DimGrid, DimBlock, 0, streamExec>>>(g, epsilon, numThreadUpdates, devLambdaGlobal, devRunFlag, numThreads);
+    EdgeUpdateKernel<<<DimGrid, DimBlock, 0, streamExec>>>(g, epsilon, numThreadUpdates, devLambdaGlobal, devRunFlag, numThreads);
     cudaDeviceSynchronize();
 
 

@@ -6,7 +6,7 @@ LLIBS =
 
 NVCC = nvcc
 NVLIBFLAGS = -c -std=c++11 -rdc=true -arch=sm_30 --expt-relaxed-constexpr
-NVFLAGS = -Wno-deprecated-gpu-targets
+NVFLAGS = -Wno-deprecated-gpu-targets -O0
 NVDEBUG = -g -G
 
 CUDAFLAGS= -I/usr/local/cuda/include -L/usr/local/cuda/lib64 -lcuda -lcudart

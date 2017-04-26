@@ -46,11 +46,11 @@ int main(int, char**) {
 
 	g.CopyMessageMemory();
 
-	// CPrecisionTimer CTmr;
-	// CTmr.Start();
-	// CudaAsyncRMPThread<double, int> ARMP;
-	// ARMP.CudaRunMP(g, 1.0, 100, 5, 100);
-	// std::cout << CTmr.Stop() << std::endl;
+	CPrecisionTimer CTmr;
+	CTmr.Start();
+	CudaAsyncRMPThread<double, int> ARMP;
+	ARMP.CudaRunMP(g, 1.0, 100, 5, 100);
+	std::cout << CTmr.Stop() << std::endl;
 
 
 	return 0;

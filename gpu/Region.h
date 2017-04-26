@@ -96,7 +96,7 @@ class MPGraph
     		PotentialVector(T* d, S s) : data(d), size(s) {};
     	};
 
-    private:
+    public:
         class Region
         {
             public:
@@ -210,8 +210,8 @@ class MPGraph
     	};
 
         // hack to get around the whole "no declared vectors in derive"
-        std::map<GpuMPNode*, std::vector<GpuMsgContainer*>> nodeParents;
-        std::map<GpuMPNode*, std::vector<GpuMsgContainer*>> nodeChildren;
+        //std::map<GpuMPNode*, std::vector<GpuMsgContainer*>> nodeParents;
+        //std::map<GpuMPNode*, std::vector<GpuMsgContainer*>> nodeChildren;
 
         thrust::host_vector<S> GpuCardinalities;
         thrust::host_vector<GpuMPNode*> GpuGraph;
@@ -236,7 +236,8 @@ class MPGraph
     		GpuMsgContainer* parentPtr;
     		GpuMsgContainer* childPtr;
     		S* rStateMultipliers;//cumulative size of parent region variables that overlap with child region (r)
-    		S* newVarStateMultipliers;//cumulative size of parent region variables that are unique to parent region
+    		size_t rStateMultipliersSize;
+		S* newVarStateMultipliers;//cumulative size of parent region variables that are unique to parent region
     		//std::vector<S> newVarCumSize;//cumulative size of new variables
     		S* newVarIX;//variable indices of new variables
             size_t newVarIXsize;
@@ -296,7 +297,7 @@ class MPGraph
 
     	__device__ void DeAllocateReparameterizeEdgeWorkspaceMem(REdgeWorkspaceID& w) const;
 
-        __device__ void CudaDeAllocateReparameterizeEdgeWorkspaceMem(REdgeWorkspaceID& w) const;
+        void CudaDeAllocateReparameterizeEdgeWorkspaceMem(REdgeWorkspaceID& w) const;
 
         __device__ const GEdgeWorkspaceID AllocateGradientEdgeWorkspaceMem() const;
 
