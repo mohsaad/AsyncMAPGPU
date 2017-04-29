@@ -18,6 +18,7 @@ endif
 
 all:
 	make gpuTestAsyncRMP
+	make testAsyncRMP
 
 clean:
 	rm -f bin/*

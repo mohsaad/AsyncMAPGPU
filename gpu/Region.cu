@@ -10,9 +10,10 @@
 // runFlag: a flag that controls when we want to terminate the array
 // rangeRandNums: random numbers (defined by the graph)
 template<typename T, typename S>
- __global__ void EdgeUpdateKernel(MPGraph<T, S> g, T epsilon, size_t* numThreadUpdates, T* lambdaGlobal, int* runFlag, int numThreads)
+ __global__ void EdgeUpdateKernel(MPGraph<T, S> g, T epsilon, size_t* numThreadUpdates, T* lambdaGlobal, volatile int* runFlag, int numThreads)
 {
      int tx = threadIdx.x + blockIdx.x * blockDim.x;
+
      if(tx < numThreads)
      {
          int uid;
@@ -31,6 +32,8 @@ template<typename T, typename S>
          int rangeRandNums = g.NumberOfEdges() - 1;
 
 
+
+
          while(*runFlag == 0)
          {
          	uid = floorf(curand_uniform(&state) * rangeRandNums);
@@ -39,14 +42,14 @@ template<typename T, typename S>
 		g.UpdateEdge(devLambdaBase, lambdaGlobal, uid, false);
 //
 		numThreadUpdates[tx]++;
-		 __syncthreads();
+		// __syncthreads();
          }
 //
 //         // free device pointers
          g.DeAllocateReparameterizeEdgeWorkspaceMem(rew);
          free(devLambdaBase);
 //
-         atomicAdd(runFlag, numThreads);
+         //atomicAdd(runFlag, numThreads);
 //
      }
 //
@@ -59,8 +62,6 @@ template<typename T, typename S>
 int CudaAsyncRMPThread<T,S>::CudaRunMP(MPGraph<T, S>& g, T epsilon, int numIterations, int numThreads, int WaitTimeInMS) {
 
     size_t msgSize = g.HostGetLambdaSize();
-
-
 
     std::cout << "Num threads " << numThreads << std::endl;
 
@@ -123,25 +124,22 @@ int CudaAsyncRMPThread<T,S>::CudaRunMP(MPGraph<T, S>& g, T epsilon, int numItera
     std::cout << "Executing kernel..." << std::endl;
 
 
-    //CTmr.start();
     // start the kernel
     EdgeUpdateKernel<<<DimGrid, DimBlock, 0, streamExec>>>(g, epsilon, numThreadUpdates, devLambdaGlobal, devRunFlag, numThreads);
-    cudaDeviceSynchronize();
-
 
     for (int k = 0; k < numIterations; ++k)
     {
+        std::cout << "Iteration " << k << std::endl;
         std::this_thread::sleep_for(std::chrono::milliseconds(WaitTimeInMS));
+
         cudaMemcpyAsync(lambdaGlob, devLambdaGlobal, sizeof(T)*msgSize, cudaMemcpyDeviceToHost, streamCopy);
-        // std::cout << "line 227" << std::endl;
-        // sy.ComputeDualNoSync();
-        // std::cout << "line 229" << std::endl;
+        sy.ComputeDualNoSync();
+
     }
     gpuErrchk(cudaMemcpyAsync(devRunFlag, &stopFlag, sizeof(int), cudaMemcpyHostToDevice, streamCopy));
-    cudaDeviceSynchronize();
+
     // now, we can block
     gpuErrchk(cudaMemcpy(hostThreadUpdates, numThreadUpdates, sizeof(size_t)*numThreads, cudaMemcpyDeviceToHost));
-    //CTmr.stop();
 
     gpuErrchk(cudaMemcpy(&stopFlag, devRunFlag, sizeof(int), cudaMemcpyDeviceToHost));
     if(stopFlag == 1)
