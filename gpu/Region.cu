@@ -10,7 +10,7 @@
 // runFlag: a flag that controls when we want to terminate the array
 // rangeRandNums: random numbers (defined by the graph)
 template<typename T, typename S>
- __global__ void EdgeUpdateKernel(MPGraph<T, S> g, T epsilon, size_t* numThreadUpdates, T* lambdaGlobal, volatile int* runFlag, int numThreads)
+__global__ void EdgeUpdateKernel(MPGraph<T, S> *g, T epsilon, size_t* numThreadUpdates, T* lambdaGlobal, volatile int* runFlag, int numThreads)
 {
      int tx = threadIdx.x + blockIdx.x * blockDim.x;
 
@@ -22,31 +22,31 @@ template<typename T, typename S>
 
          // allocate space for edge workspace
          typename MPGraph<T, S>::REdgeWorkspaceID rew;
-         rew = g.AllocateReparameterizeEdgeWorkspaceMem(epsilon);
+         rew = g->AllocateReparameterizeEdgeWorkspaceMem(epsilon);
 
          // allocate an array that will act as our base
-         size_t msgSize = g.GetLambdaSize();
+         size_t msgSize = g->GetLambdaSize();
          T* devLambdaBase = (T*)malloc(msgSize * sizeof(T));
          memset(devLambdaBase, T(0), sizeof(T) * msgSize);
 
-         int rangeRandNums = g.NumberOfEdges() - 1;
+         int rangeRandNums = g->NumberOfEdges() - 1;
 
 
 
 
-         while(*runFlag == 0)
+         for(int i = 0; i < 100000; i++)
          {
          	uid = floorf(curand_uniform(&state) * rangeRandNums);
-            	g.CopyMessagesForEdge(lambdaGlobal, devLambdaBase, uid);
-		g.ReparameterizeEdge(devLambdaBase, uid, epsilon, false, rew);
-		g.UpdateEdge(devLambdaBase, lambdaGlobal, uid, false);
+            	g->CopyMessagesForEdge(lambdaGlobal, devLambdaBase, uid);
+		g->ReparameterizeEdge(devLambdaBase, uid, epsilon, false, rew);
+		g->UpdateEdge(devLambdaBase, lambdaGlobal, uid, false);
 //
 		numThreadUpdates[tx]++;
 		// __syncthreads();
          }
 //
 //         // free device pointers
-         g.DeAllocateReparameterizeEdgeWorkspaceMem(rew);
+         g->DeAllocateReparameterizeEdgeWorkspaceMem(rew);
          free(devLambdaBase);
 //
          //atomicAdd(runFlag, numThreads);
@@ -86,11 +86,12 @@ int CudaAsyncRMPThread<T,S>::CudaRunMP(MPGraph<T, S>& g, T epsilon, int numItera
     gpuErrchk(cudaMemset((void*)lambdaGlob, T(0), sizeof(T)*msgSize));
 
 
+    
 
     // allocate space and copy graph to GPU
     MPGraph<T,S>* gPtr = NULL;
-    gpuErrchk(cudaMalloc((void**)&gPtr, sizeof(&g)));
-    gpuErrchk(cudaMemcpy(gPtr, &g, sizeof(&g), cudaMemcpyHostToDevice));
+    gpuErrchk(cudaMalloc((void**)&gPtr, sizeof(g)));
+    gpuErrchk(cudaMemcpy(gPtr, &g, sizeof(g), cudaMemcpyHostToDevice));
 
     // initialize the number of region updates
     size_t* numThreadUpdates = NULL;
@@ -125,8 +126,9 @@ int CudaAsyncRMPThread<T,S>::CudaRunMP(MPGraph<T, S>& g, T epsilon, int numItera
 
 
     // start the kernel
-    EdgeUpdateKernel<<<DimGrid, DimBlock, 0, streamExec>>>(g, epsilon, numThreadUpdates, devLambdaGlobal, devRunFlag, numThreads);
+    EdgeUpdateKernel<<<DimGrid, DimBlock, 0, streamExec>>>(gPtr, epsilon, numThreadUpdates, devLambdaGlobal, devRunFlag, numThreads);
 
+    /*
     for (int k = 0; k < numIterations; ++k)
     {
         std::cout << "Iteration " << k << std::endl;
@@ -136,11 +138,14 @@ int CudaAsyncRMPThread<T,S>::CudaRunMP(MPGraph<T, S>& g, T epsilon, int numItera
         sy.ComputeDualNoSync();
 
     }
+    */
     gpuErrchk(cudaMemcpyAsync(devRunFlag, &stopFlag, sizeof(int), cudaMemcpyHostToDevice, streamCopy));
 
     // now, we can block
     gpuErrchk(cudaMemcpy(hostThreadUpdates, numThreadUpdates, sizeof(size_t)*numThreads, cudaMemcpyDeviceToHost));
 
+    cudaMemcpy(lambdaGlob, devLambdaGlobal, sizeof(T)*msgSize, cudaMemcpyDeviceToHost);
+    sy.ComputeDualNoSync();
     gpuErrchk(cudaMemcpy(&stopFlag, devRunFlag, sizeof(int), cudaMemcpyDeviceToHost));
     if(stopFlag == 1)
     {

@@ -7,11 +7,12 @@
 int main(int, char**) {
 	std::cout << "Test..." << std::endl;
 
+        /*
 	unsigned int flags = 0;
 	gpuErrchk(cudaGetDeviceFlags(&flags));
 	flags |= cudaDeviceScheduleYield;
 	gpuErrchk(cudaSetDeviceFlags(flags));
-
+*/
 
 	MPGraph<double, int> g;
 //	cudaMallocManaged((void**)&g, sizeof(g));
