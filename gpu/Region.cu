@@ -34,8 +34,8 @@ __global__ void EdgeUpdateKernel(MPGraph<T, S> *g, T epsilon, size_t* numThreadU
 
 
 
-         for(int i = 0; i < 100000; i++)
-         {
+         //for(int i = 0; i < 1000; i++)
+         //{
          	uid = floorf(curand_uniform(&state) * rangeRandNums);
             	g->CopyMessagesForEdge(lambdaGlobal, devLambdaBase, uid);
 		g->ReparameterizeEdge(devLambdaBase, uid, epsilon, false, rew);
@@ -43,7 +43,7 @@ __global__ void EdgeUpdateKernel(MPGraph<T, S> *g, T epsilon, size_t* numThreadU
 //
 		numThreadUpdates[tx]++;
 		// __syncthreads();
-         }
+         //}
 //
 //         // free device pointers
          g->DeAllocateReparameterizeEdgeWorkspaceMem(rew);
