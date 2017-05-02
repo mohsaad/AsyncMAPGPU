@@ -10,7 +10,7 @@
 // runFlag: a flag that controls when we want to terminate the array
 // rangeRandNums: random numbers (defined by the graph)
 template<typename T, typename S>
-__global__ void EdgeUpdateKernel(MPGraph<T, S> *g, T epsilon, size_t* numThreadUpdates, T* lambdaGlobal, volatile int* runFlag, int numThreads)
+__global__ void EdgeUpdateKernel(const MPGraph<T, S>* g, T epsilon, size_t* numThreadUpdates, T* lambdaGlobal, volatile int* runFlag, int numThreads)
 {
      int tx = threadIdx.x + blockIdx.x * blockDim.x;
 
@@ -34,16 +34,17 @@ __global__ void EdgeUpdateKernel(MPGraph<T, S> *g, T epsilon, size_t* numThreadU
 
 
 
-         //for(int i = 0; i < 1000; i++)
-         //{
-         	uid = floorf(curand_uniform(&state) * rangeRandNums);
-            	g->CopyMessagesForEdge(lambdaGlobal, devLambdaBase, uid);
+         for(uid = 0; uid < g->NumberOfEdges(); uid++)
+         {
+         	//uid = floorf(curand_uniform(&state) * rangeRandNums);
+            	//uid = 0;
+		g->CopyMessagesForEdge(lambdaGlobal, devLambdaBase, uid);
 		g->ReparameterizeEdge(devLambdaBase, uid, epsilon, false, rew);
 		g->UpdateEdge(devLambdaBase, lambdaGlobal, uid, false);
-//
+//`
 		numThreadUpdates[tx]++;
 		// __syncthreads();
-         //}
+         }
 //
 //         // free device pointers
          g->DeAllocateReparameterizeEdgeWorkspaceMem(rew);
@@ -141,8 +142,11 @@ int CudaAsyncRMPThread<T,S>::CudaRunMP(MPGraph<T, S>& g, T epsilon, int numItera
     */
     gpuErrchk(cudaMemcpyAsync(devRunFlag, &stopFlag, sizeof(int), cudaMemcpyHostToDevice, streamCopy));
 
+    cudaDeviceSynchronize();
     // now, we can block
     gpuErrchk(cudaMemcpy(hostThreadUpdates, numThreadUpdates, sizeof(size_t)*numThreads, cudaMemcpyDeviceToHost));
+
+    g.ResetMessageMemory();
 
     cudaMemcpy(lambdaGlob, devLambdaGlobal, sizeof(T)*msgSize, cudaMemcpyDeviceToHost);
     sy.ComputeDualNoSync();
@@ -173,7 +177,7 @@ int CudaAsyncRMPThread<T,S>::CudaRunMP(MPGraph<T, S>& g, T epsilon, int numItera
     std::cout << "Region updates: " << regionUpdates << std::endl;
     std::cout << "Total regions:  " << g.HostNumberOfRegionsWithParents() << std::endl;
 
-    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+//    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
     std::cout << "Terminating program." << std::endl;
     return 0;
 }

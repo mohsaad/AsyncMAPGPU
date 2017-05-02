@@ -1,6 +1,6 @@
 CC = g++
 LIBFLAGS = -c
-CFLAGS = -Wall -W -fopenmp -O3 -pedantic -std=c++0x
+CFLAGS = -Wall -W -fopenmp -O3 -pedantic -std=c++0x -g
 LFLAGS =
 LLIBS =
 
@@ -30,7 +30,7 @@ clean:
 
 
 testAsyncRMP: testAsyncRMP/TestAsyncRMP.cpp libAsyncRMP/Region.h
-	$(CC) testAsyncRMP/TestAsyncRMP.cpp libAsyncRMP/Region.cpp -o bin/testAsyncRMP $(CFLAGS) $(LFLAGS) $(LLIBS) $(OPTS)
+	$(CC) testAsyncRMP/TestAsyncRMP.cpp libAsyncRMP/Region.cpp -o bin/testAsyncRMP $(CFLAGS) -g $(LFLAGS) $(LLIBS) $(OPTS)
 
 testRMP: testRMP/TestRMP.cpp libAsyncRMP/Region.h
 	$(CC) testRMP/TestRMP.cpp libAsyncRMP/Region.cpp -o bin/testRMP $(CFLAGS) $(LFLAGS) $(LLIBS) $(OPTS)

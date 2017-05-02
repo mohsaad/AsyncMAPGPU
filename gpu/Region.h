@@ -253,6 +253,10 @@ class MPGraph
         std::map<MsgContainer*, GpuMsgContainer*> CpuGpuMsgMap;
 
 
+ 
+
+
+
         std::map<EdgeID*, size_t> EdgeIDMap;
 
 
@@ -323,7 +327,7 @@ class MPGraph
 
         __device__ size_t NumberOfEdges() const;
 
-        __device__ void UpdateEdge(T* lambdaBase, T* lambdaGlobal, int e, bool additiveUpdate);
+        __device__ void UpdateEdge(T* lambdaBase, T* lambdaGlobal, int e, bool additiveUpdate) const;
 
         __device__ void CopyLambda(T* lambdaSrc, T* lambdaDst, size_t s_r_e) const;
 
@@ -339,9 +343,9 @@ class MPGraph
 
         __device__ void CopyMessagesForStar(T* lambdaSrc, T* lambdaDst, int r) const;
 
-        __device__ void ReparameterizeEdge(T* lambdaBase, int e, T epsilon, bool additiveUpdate, REdgeWorkspaceID& wspace);
+        __device__ void ReparameterizeEdge(T* lambdaBase, int e, T epsilon, bool additiveUpdate, REdgeWorkspaceID& wspace) const;
 
-        __device__ T ComputeMu(T* lambdaBase, GpuEdgeID* edge, S* indivVarStates, size_t numVarsOverlap, T epsilon, T* workspaceMem, S* MuIXMem);
+        __device__ T ComputeMu(T* lambdaBase, GpuEdgeID* edge, S* indivVarStates, size_t numVarsOverlap, T epsilon, T* workspaceMem, S* MuIXMem) const;
 
         __device__ void UpdateRegion(T* lambdaBase, T* lambdaGlobal, int r, bool additiveUpdate);
 
@@ -370,6 +374,8 @@ class MPGraph
     	__device__ void DeleteBeliefs();
 
         int CopyMessageMemory();
+	
+	int ResetMessageMemory();
 
     private:
 
