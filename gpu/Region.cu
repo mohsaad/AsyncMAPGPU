@@ -34,10 +34,9 @@ __global__ void EdgeUpdateKernel(const MPGraph<T, S>* g, T epsilon, size_t* numT
 
 
 
-         for(uid = 0; uid < g->NumberOfEdges(); uid++)
+         for(int i = 0; i < 200; i++)
          {
-         	//uid = floorf(curand_uniform(&state) * rangeRandNums);
-            	//uid = 0;
+         	uid = floorf(curand_uniform(&state) * rangeRandNums);
 		g->CopyMessagesForEdge(lambdaGlobal, devLambdaBase, uid);
 		g->ReparameterizeEdge(devLambdaBase, uid, epsilon, false, rew);
 		g->UpdateEdge(devLambdaBase, lambdaGlobal, uid, false);
