@@ -53,7 +53,7 @@ inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=t
 }
 
 
-#define BLOCK_SIZE 256
+#define BLOCK_SIZE 32
 /*
     The MPGraph class. Defines a graph.
 

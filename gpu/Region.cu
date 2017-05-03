@@ -10,7 +10,7 @@
 // runFlag: a flag that controls when we want to terminate the array
 // rangeRandNums: random numbers (defined by the graph)
 template<typename T, typename S>
-__global__ void EdgeUpdateKernel(const MPGraph<T, S>* g, T epsilon, size_t* numThreadUpdates, T* lambdaGlobal, volatile int* runFlag, int numThreads)
+__global__ void EdgeUpdateKernel(MPGraph<T, S>* g, T epsilon, size_t* numThreadUpdates, T* lambdaGlobal, volatile int* runFlag, int numThreads)
 {
      int tx = threadIdx.x + blockIdx.x * blockDim.x;
 
@@ -34,8 +34,8 @@ __global__ void EdgeUpdateKernel(const MPGraph<T, S>* g, T epsilon, size_t* numT
 
 
 
-         for(int i = 0; i < 200; i++)
-         {
+         //for(int i = 0; i < 200; i++)
+         //{
          	uid = floorf(curand_uniform(&state) * rangeRandNums);
 		g->CopyMessagesForEdge(lambdaGlobal, devLambdaBase, uid);
 		g->ReparameterizeEdge(devLambdaBase, uid, epsilon, false, rew);
@@ -44,7 +44,7 @@ __global__ void EdgeUpdateKernel(const MPGraph<T, S>* g, T epsilon, size_t* numT
 		numThreadUpdates[tx]++;
 		__syncthreads();
          	
-	}
+	//}
 //
 //         // free device pointers
          g->DeAllocateReparameterizeEdgeWorkspaceMem(rew);
@@ -57,6 +57,52 @@ __global__ void EdgeUpdateKernel(const MPGraph<T, S>* g, T epsilon, size_t* numT
 }
 
 
+template<typename T, typename S>
+__global__ void RegionUpdateKernel(MPGraph<T, S>* g, T epsilon, size_t* numThreadUpdates, T* lambdaGlobal, volatile int* runFlag, int numThreads)
+{
+     int tx = threadIdx.x + blockIdx.x * blockDim.x;
+
+     if(tx < numThreads)
+     {
+         int uid;
+         curandState_t state;
+         curand_init(clock64(),tx,0,&state);
+
+         // allocate space for edge workspace
+         typename MPGraph<T, S>::RRegionWorkspaceID rew;
+         rew = g->AllocateReparameterizeRegionWorkspaceMem(epsilon);
+
+         // allocate an array that will act as our base
+         size_t msgSize = g->GetLambdaSize();
+         T* devLambdaBase = (T*)malloc(msgSize * sizeof(T));
+         memset(devLambdaBase, T(0), sizeof(T) * msgSize);
+
+         int rangeRandNums = g->NumberOfRegionsWithParents();
+
+
+
+
+         for(int i = 0; i < 500; i++)
+         {
+         	uid = floorf(curand_uniform(&state) * rangeRandNums);
+		g->CopyMessagesForStar(lambdaGlobal, devLambdaBase, uid);
+		g->ReparameterizeRegion(devLambdaBase, uid, epsilon, false, rew);
+		g->UpdateRegion(devLambdaBase, lambdaGlobal, uid, false);
+//`
+		numThreadUpdates[tx]++;
+		__syncthreads();
+         	
+	}
+//
+//         // free device pointers
+         g->DeAllocateReparameterizeRegionWorkspaceMem(rew);
+         free(devLambdaBase);
+//
+         //atomicAdd(runFlag, numThreads);
+//
+     }
+//
+}
 
 
 template<typename T, typename S>
@@ -119,16 +165,17 @@ int CudaAsyncRMPThread<T,S>::CudaRunMP(MPGraph<T, S>& g, T epsilon, int numItera
     ThreadSync<T, S> sy(numThreads, lambdaGlob, epsilon, &g);
 
     // grid/block dimensions
-    dim3 DimGrid(5,1,1);
-    dim3 DimBlock(32,1,1);
+    dim3 DimGrid(ceil(numThreads * 1.0 / BLOCK_SIZE),1,1);
+    dim3 DimBlock(BLOCK_SIZE,1,1);
     int stopFlag = 1;
 
     std::cout << "Executing kernel..." << std::endl;
 
 
     // start the kernel
-    EdgeUpdateKernel<<<DimGrid, DimBlock, 0, streamExec>>>(gPtr, epsilon, numThreadUpdates, devLambdaGlobal, devRunFlag, numThreads);
+   // EdgeUpdateKernel<<<DimGrid, DimBlock, 0, streamExec>>>(gPtr, epsilon, numThreadUpdates, devLambdaGlobal, devRunFlag, numThreads);
 
+    RegionUpdateKernel<<<DimGrid, DimBlock, 0, streamExec>>>(gPtr, epsilon, numThreadUpdates, devLambdaGlobal, devRunFlag, numThreads);
     /*    
     for (int k = 0; k < numIterations; ++k)
     {
@@ -158,11 +205,11 @@ int CudaAsyncRMPThread<T,S>::CudaRunMP(MPGraph<T, S>& g, T epsilon, int numItera
     }
 
     size_t regionUpdates = 0;
-    for(int k=0;k<numThreads;++k) {
+   for(int k=0;k<numThreads;++k) {
         size_t tmp = hostThreadUpdates[k];
-        std::cout << "Thread " << k << ": " << tmp << std::endl;
+       // std::cout << "Thread " << k << ": " << tmp << std::endl;
         regionUpdates += tmp;
-    }
+   }
 
     cudaFree(gPtr);
     cudaFreeHost(lambdaGlob);

@@ -57,7 +57,7 @@ int main(int, char**) {
 	CPrecisionTimer CTmr;
 	CTmr.Start();
 	CudaAsyncRMPThread<double, int> ARMP;
-	ARMP.CudaRunMP(g, 1.0, 100,32*5, 100);
+	ARMP.CudaRunMP(g, 1.0, 100,1000, 100);
 	std::cout << CTmr.Stop() << std::endl;
 
 
