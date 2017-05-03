@@ -633,9 +633,9 @@ T MPGraph<T,S>::HostComputeDual(T* lambdaBase, T epsilon, DualWorkspaceID& dw) c
         }
 
         if (ecr != T(0)) {
-            T sum = expf(mem[0] - maxVal);
+            T sum = std::exp(mem[0] - maxVal);
             for (size_t s_r = 1; s_r != s_r_e; ++s_r) {
-                sum += expf(mem[s_r] - maxVal);
+                sum += std::exp(mem[s_r] - maxVal);
             }
             dual += ecr*(maxVal + std::log(sum + T(1e-20)));
         } else {
@@ -1005,16 +1005,16 @@ __device__  void MPGraph<T,S>::CopyMessagesForStar(T* lambdaSrc, T* lambdaDst, i
         GpuMPNode* p_ptr = pn->node;
         size_t s_p_e = p_ptr->GetPotentialSize();
         // for (typename std::vector<MsgContainer>::const_iterator p_hat = p_ptr->Parents.begin(), p_hat_e = p_ptr->Parents.end(); p_hat != p_hat_e; ++p_hat)
-        for(size_t j = 0; j < r_ptr->numParents; j++)
+        for(size_t j = 0; j < p_ptr->numParents; j++)
         {
-            p_hat = &(r_ptr->GpuParents[j]);
+            p_hat = &(p_ptr->GpuParents[j]);
             CopyLambda(lambdaSrc + p_hat->lambda, lambdaDst + p_hat->lambda, s_p_e);
         }
 
         // for (typename std::vector<MsgContainer>::const_iterator c_hat = p_ptr->Children.begin(), c_hat_e = p_ptr->Children.end(); c_hat != c_hat_e; ++c_hat)
-        for(size_t j = 0; j < r_ptr->numChildren; i++)
+        for(size_t j = 0; j < p_ptr->numChildren; j++)
         {
-            c_hat = &(r_ptr->GpuChildren[j]);
+            c_hat = &(p_ptr->GpuChildren[j]);
             if (c_hat->node != r_ptr) {
                 size_t s_pc_e = c_hat->node->GetPotentialSize();
                 CopyLambda(lambdaSrc + c_hat->lambda, lambdaDst + c_hat->lambda, s_pc_e);
@@ -1154,9 +1154,9 @@ __device__ T MPGraph<T,S>::ComputeMu(T* lambdaBase, GpuEdgeID* edge, S* indivVar
     if (ecp != T(0)) {
         T sumVal = std::exp(mem[0] - maxval);
         for (size_t s_p = 1; s_p != s_p_e; ++s_p) {
-            sumVal += exp(mem[s_p] - maxval);
+            sumVal += std::exp(mem[s_p] - maxval);
         }
-        maxval = ecp*(maxval + log(sumVal));
+        maxval = ecp*(maxval + std::log(sumVal));
         //delete[] mem;
     }
 
@@ -1239,7 +1239,7 @@ __device__ void MPGraph<T,S>::ReparameterizeRegion(T* lambdaBase, int r, T epsil
 
         ParentLocalIX = 0;
         // for (typename std::vector<MsgContainer>::const_iterator p = r_ptr->Parents.begin(), p_e = r_ptr->Parents.end(); p != p_e; ++p, ++ParentLocalIX)
-        for(size_t i = 0; i < r_ptr->numParents; i++)
+        for(size_t i = 0; i < r_ptr->numParents; i++, ++ParentLocalIX)
         {
             p = &(r_ptr->GpuParents[i]);
             GpuMPNode* ptr = p->node;//ptr points on parent, i.e., ptr->c_r = c_p!!!
@@ -1644,11 +1644,11 @@ void ThreadSync<T,S>::terminateFunc() {
 
 template<typename T, typename S>
 void ThreadSync<T,S>::ComputeDualNoSync() {
-    std::cout << "line 1016" << std::endl;
+    ///std::cout << "line 1016" << std::endl;
     double timeMS = CTmr.Stop()*1000.;
-    std::cout << "line 1018" << std::endl;
+    //std::cout << "line 1018" << std::endl;
     std::copy(lambdaGlobal, lambdaGlobal+LambdaForNoSync.size(), &LambdaForNoSync[0]);
-    std::cout << "line 1020" << std::endl;
+   // std::cout << "line 1020" << std::endl;
     T dualVal = g->HostComputeDual(&LambdaForNoSync[0], epsilon, dw);
     std::cout << timeMS <<"; " << CTmr1.Stop()*1000. << "; " << dualVal << std::endl;
 }

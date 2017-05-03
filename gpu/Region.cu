@@ -82,8 +82,9 @@ __global__ void RegionUpdateKernel(MPGraph<T, S>* g, T epsilon, size_t* numThrea
 
 
 
-         for(int i = 0; i < 500; i++)
+         for(int i = 0; i < rangeRandNums; i++)
          {
+		//uid = i;
          	uid = floorf(curand_uniform(&state) * rangeRandNums);
 		g->CopyMessagesForStar(lambdaGlobal, devLambdaBase, uid);
 		g->ReparameterizeRegion(devLambdaBase, uid, epsilon, false, rew);
@@ -119,7 +120,7 @@ int CudaAsyncRMPThread<T,S>::CudaRunMP(MPGraph<T, S>& g, T epsilon, int numItera
         g.HostDeAllocateDualWorkspaceMem(dw);
         return 0;
     }
-    std::cout << std::setprecision(std::numeric_limits<long double>::digits10 + 1);
+    std::cout << std::setprecision(15);
 
     // allocate device pointers for lambda global
     T* devLambdaGlobal = NULL;
@@ -175,18 +176,18 @@ int CudaAsyncRMPThread<T,S>::CudaRunMP(MPGraph<T, S>& g, T epsilon, int numItera
     // start the kernel
    // EdgeUpdateKernel<<<DimGrid, DimBlock, 0, streamExec>>>(gPtr, epsilon, numThreadUpdates, devLambdaGlobal, devRunFlag, numThreads);
 
-    RegionUpdateKernel<<<DimGrid, DimBlock, 0, streamExec>>>(gPtr, epsilon, numThreadUpdates, devLambdaGlobal, devRunFlag, numThreads);
-    /*    
-    for (int k = 0; k < numIterations; ++k)
+    //RegionUpdateKernel<<<DimGrid, DimBlock, 0, streamExec>>>(gPtr, epsilon, numThreadUpdates, devLambdaGlobal, devRunFlag, numThreads);
+        
+    for (int k = 0; k < 20; ++k)
     {
-        std::cout << "Iteration " << k << std::endl;
-        std::this_thread::sleep_for(std::chrono::milliseconds(WaitTimeInMS));
+        //std::cout << "Iteration " << k << std::endl;
+        //std::this_thread::sleep_for(std::chrono::milliseconds(WaitTimeInMS));
 
-        cudaMemcpyAsync(lambdaGlob, devLambdaGlobal, sizeof(T)*msgSize, cudaMemcpyDeviceToHost, streamCopy);
+    	RegionUpdateKernel<<<DimGrid, DimBlock, 0, streamExec>>>(gPtr, epsilon, numThreadUpdates, devLambdaGlobal, devRunFlag, numThreads);
+        cudaMemcpy(lambdaGlob, devLambdaGlobal, sizeof(T)*msgSize, cudaMemcpyDeviceToHost);
         sy.ComputeDualNoSync();
 
     }
-*/
    
     gpuErrchk(cudaMemcpyAsync(devRunFlag, &stopFlag, sizeof(int), cudaMemcpyHostToDevice, streamCopy));
 
