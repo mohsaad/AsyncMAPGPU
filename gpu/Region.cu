@@ -29,7 +29,7 @@ __global__ void EdgeUpdateKernel(const MPGraph<T, S>* g, T epsilon, size_t* numT
          T* devLambdaBase = (T*)malloc(msgSize * sizeof(T));
          memset(devLambdaBase, T(0), sizeof(T) * msgSize);
 
-         int rangeRandNums = g->NumberOfEdges() - 1;
+         int rangeRandNums = g->NumberOfEdges();
 
 
 
@@ -42,8 +42,9 @@ __global__ void EdgeUpdateKernel(const MPGraph<T, S>* g, T epsilon, size_t* numT
 		g->UpdateEdge(devLambdaBase, lambdaGlobal, uid, false);
 //`
 		numThreadUpdates[tx]++;
-		// __syncthreads();
-         }
+		__syncthreads();
+         	
+	}
 //
 //         // free device pointers
          g->DeAllocateReparameterizeEdgeWorkspaceMem(rew);
@@ -118,7 +119,7 @@ int CudaAsyncRMPThread<T,S>::CudaRunMP(MPGraph<T, S>& g, T epsilon, int numItera
     ThreadSync<T, S> sy(numThreads, lambdaGlob, epsilon, &g);
 
     // grid/block dimensions
-    dim3 DimGrid(1,1,1);
+    dim3 DimGrid(5,1,1);
     dim3 DimBlock(32,1,1);
     int stopFlag = 1;
 
@@ -128,7 +129,7 @@ int CudaAsyncRMPThread<T,S>::CudaRunMP(MPGraph<T, S>& g, T epsilon, int numItera
     // start the kernel
     EdgeUpdateKernel<<<DimGrid, DimBlock, 0, streamExec>>>(gPtr, epsilon, numThreadUpdates, devLambdaGlobal, devRunFlag, numThreads);
 
-    /*
+    /*    
     for (int k = 0; k < numIterations; ++k)
     {
         std::cout << "Iteration " << k << std::endl;
@@ -138,7 +139,8 @@ int CudaAsyncRMPThread<T,S>::CudaRunMP(MPGraph<T, S>& g, T epsilon, int numItera
         sy.ComputeDualNoSync();
 
     }
-    */
+*/
+   
     gpuErrchk(cudaMemcpyAsync(devRunFlag, &stopFlag, sizeof(int), cudaMemcpyHostToDevice, streamCopy));
 
     cudaDeviceSynchronize();

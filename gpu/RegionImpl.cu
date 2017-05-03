@@ -329,7 +329,7 @@ int MPGraph<T,S>::CopyMessageMemory()
         {
             origContainer = &(Graph[i]->Parents[j]);
 	        hostContainer.lambda = origContainer->lambda;
-            hostContainer.node = CpuGpuMap[Graph[i]];
+            hostContainer.node = CpuGpuMap[Graph[i]->Parents[j].node];
             hostContainer.edge = CpuGpuEdgeMap[Graph[i]->Parents[j].edge];
 
 
@@ -349,7 +349,7 @@ int MPGraph<T,S>::CopyMessageMemory()
         {
             origContainer = &(Graph[i]->Children[j]);
 	    hostContainer.lambda = origContainer->lambda;
-	    hostContainer.node = CpuGpuMap[Graph[i]];
+	    hostContainer.node = CpuGpuMap[Graph[i]->Children[j].node];
             hostContainer.edge = CpuGpuEdgeMap[Graph[i]->Children[j].edge];
 
             // fill out translator array
@@ -378,8 +378,8 @@ int MPGraph<T,S>::CopyMessageMemory()
 
         hostEdge.newVarSize = Edges[i]->newVarSize;
         hostEdge.newVarIXsize = Edges[i]->newVarIX.size();
-	hostEdge.parentPtr = CpuGpuMsgMap[Edges[i]->childPtr];
-	hostEdge.childPtr = CpuGpuMsgMap[Edges[i]->parentPtr];
+	hostEdge.childPtr = CpuGpuMsgMap[Edges[i]->childPtr];
+	hostEdge.parentPtr = CpuGpuMsgMap[Edges[i]->parentPtr];
 
         // now, allocate space for the three vectors
         gpuErrchk(cudaMalloc((void**)&(hostEdge.rStateMultipliers), sizeof(S)*Edges[i]->rStateMultipliers.size()));
@@ -458,8 +458,8 @@ int MPGraph<T,S>::AllocateMessageMemory() {
                     pn->edge = cn->edge = Edges.back();
 
                     gpuErrchk(cudaMalloc((void**)&gpuID, sizeof(testID)));
-                    testID.parentPtr = CpuGpuMsgMap[&(*cn)];
-                    testID.childPtr = CpuGpuMsgMap[&(*pn)];
+                    //testID.parentPtr = CpuGpuMsgMap[&(*cn)];
+                    //testID.childPtr = CpuGpuMsgMap[&(*pn)];
 
                     gpuErrchk(cudaMemcpy(gpuID, &testID, sizeof(testID), cudaMemcpyHostToDevice));
 

@@ -50,13 +50,14 @@ int main(int, char**) {
 
 	//AsyncRMP<float, int> ARMP;
 	//ARMP.RunMP(g, 1.0f);
+	//return 0;
 
 	g.CopyMessageMemory();
 
 	CPrecisionTimer CTmr;
 	CTmr.Start();
 	CudaAsyncRMPThread<double, int> ARMP;
-	ARMP.CudaRunMP(g, 1.0, 100,32, 100);
+	ARMP.CudaRunMP(g, 1.0, 100,32*5, 100);
 	std::cout << CTmr.Stop() << std::endl;
 
 
