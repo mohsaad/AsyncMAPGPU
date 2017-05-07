@@ -216,7 +216,7 @@ int CudaAsyncRMPThread<T,S>::CudaRunMP(MPGraph<T, S>& g, T epsilon, int numItera
         regionUpdates += tmp;
     }
 
-    cudaFree(gPtr);
+    //cudaFree(gPtr);
     cudaFreeHost(lambdaGlob);
     cudaFree(devRunFlag);
     cudaFree(devLambdaGlobal);

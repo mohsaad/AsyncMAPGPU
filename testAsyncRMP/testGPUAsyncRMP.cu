@@ -60,6 +60,7 @@ int main(int, char**) {
 	ARMP.CudaRunMP(g, 1.0, 100,1000, 100);
 	std::cout << CTmr.Stop() << std::endl;
 
+    g.DeallocateGpuMemory();
 
 	return 0;
 }

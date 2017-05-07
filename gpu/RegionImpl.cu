@@ -58,17 +58,59 @@ void MPGraph<T,S>::AllocateNewGPUNode(MPNode* cpuNode, T c_r, const std::vector<
     CpuGpuMap.insert(std::pair<MPNode*, GpuMPNode*>(cpuNode, node));
 
     // also add into parents
-    //nodeParents.insert(std::pair<GpuMPNode*, std::vector*<GpuMsgContainer*>>(node, new std::vector<GpuMsgContainer*>()));
+//nodeParents.insert(std::pair<GpuMPNode*, std::vector*<GpuMsgContainer*>>(node, new std::vector<GpuMsgContainer*>()));
     //nodeChildren.insert(std::pair<GpuMPNode*, std::vector*<GpuMsgContainer*>>(node, new std::vector<GpuMsgContainer*>()));
 
+}
+
+template<typename T, typename S>
+bool MPGraph<T,S>::DeallocateGpuGraph()
+{
+    for(size_t i = 0; i < deviceNodes; i++)
+    {
+        DeallocateGpuNode(GpuGraph[i]);
+
+
+
+    }
+
+    for(size_t i 0; i < numEdges;i++)
+    {
+        DeallocateGpuEdge(GpuEdges[i]);
+    }
+
+    gpuErrchk(cudaFree(deviceGraph));
+    gpuErrchk(cudaFree(deviceEdges));
+
+    gpuErrchk(cudaFree(deviceCardinalities));
+    gpuErrchk(cudaFree(deviceValidRegionMapping));
 
 }
+
+
+
 
 template<typename T, typename S>
 bool MPGraph<T,S>::DeallocateGpuNode(GpuMPNode* node)
 {
     GpuMPNode hostNode(0, NULL, NULL, 0, 0);
+    
     gpuErrchk(cudaMemcpy(&hostNode, node, sizeof(hostNode), cudaMemcpyDeviceToHost));
+    GpuMsgContainer hostContainer(0, NULL, NULL, NULL);
+    for(int i = 0; i < hostNode.numParents; i++)
+    {
+        gpuErrchk(cudaMemcpy(&hostContainer, hostNode.GpuParents + i, sizeof(hostContainer), cudaMemcpyDeviceToHost);
+        gpuErrchk(cudaFree(hostContainer.Translator));
+
+    }
+    for(size_t i = 0; i < hostNode.numChildren; i++)
+    {
+        gpuErrchk(cudaMemcpy(&hostContainer, hostNode.GpuChildren, sizeof(hostContainer), cudaMemcpyDeviceToHost);
+        gpuErrchk(cudaFree(hostContainer.Translator));
+    }
+    gpuErrchk(cudaFree(hostNode.numParents));
+    gpuErrchk(cudaFree(hostNode.numChildren));
+
 
     gpuErrchk(cudaFree(hostNode.varIX));
     gpuErrchk(cudaFree(hostNode.pot));
@@ -76,6 +118,19 @@ bool MPGraph<T,S>::DeallocateGpuNode(GpuMPNode* node)
 
     gpuErrchk(cudaFree(node));
     return true;
+}
+
+template<typename T, typename S>
+bool MPGraph<T,S>::DeallocateGpuEdge(GpuEdge* edge)
+{ 
+    GpuEdgeID hostEdge {NULL, NULL, NULL,0, NULL, NULL, 0};
+    gpuErrchk(cudaMemcpy(&hostEdge, edge, sizeof(hostEdge), cudaMemcpyDeviceToHost));
+    gpuErrchk(cudaFree(hostEdge.rStateMultipliers));
+    gpuErrchk(cudaFree(hostEdge.newVarStateMultipliers));
+    gpuErrchk(cudaFree(hostEdge.newVarIX));
+    
+    gpuErrchk(cudaFree(edge));
+
 }
 
 template<typename T, typename S>
@@ -498,7 +553,8 @@ int MPGraph<T,S>::FillEdge() {
             size_t posP = vp - p_ptr->varIX.begin();
             if (vr == r_ptr->varIX.end()) {
                 (*e)->newVarIX.push_back(*vp);
-                (*e)->newVarStateMultipliers.push_back(((std::vector<S>*)p_ptr->tmp)->at(posP));
+
+    (*e)->newVarStateMultipliers.push_back(((std::vector<S>*)p_ptr->tmp)->at(posP));
                 (*e)->newVarSize *= Cardinalities[*vp];
             } else {
                 size_t posR = vr - r_ptr->varIX.begin();

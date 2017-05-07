@@ -375,13 +375,26 @@ class MPGraph
 
         int CopyMessageMemory();
 	
-	int ResetMessageMemory();
+
+        int ResetMessageMemory();
+
+        bool DeallocateGpuGraphh();
 
     private:
+
+
+
+
+
 
         void AllocateNewGPUNode(MPNode* cpuNode, T c_r, const std::vector<S>& varIX, T* pot, S potSize);
 
         bool DeallocateGpuNode(GpuMPNode* node);
+
+
+
+        bool DeallocateGpuEdge(GpuEdge* edge);
+    
 
 	bool DeallocateGpuContainer(GpuMsgContainer* container);
 
