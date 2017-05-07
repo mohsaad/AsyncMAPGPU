@@ -34,10 +34,10 @@ testRMP: testRMP/TestRMP.cpp libAsyncRMP/Region.h
 	$(CC) testRMP/TestRMP.cpp libAsyncRMP/Region.cpp -o bin/testRMP $(CFLAGS) $(LFLAGS) $(LLIBS) $(OPTS)
 
 gpuTestAsyncRMP: testAsyncRMP/testGPUAsyncRMP.cpp gpu/Region.h
-	$(NVCC) $(NVLIBFLAGS) $(NVDEBUG) output/Region.cu -o output/cudaRegion.o $(NVFLAGS)
-	$(NVCC) $(NVLIBFLAGS) $(NVDEBUG) output/RegionImpl.cu -o output/Region.o $(NVFLAGS)
+	$(NVCC) $(NVLIBFLAGS) $(NVDEBUG) gpu/Region.cu -o output/cudaRegion.o $(NVFLAGS)
+	$(NVCC) $(NVLIBFLAGS) $(NVDEBUG) gpu/RegionImpl.cu -o output/Region.o $(NVFLAGS)
 	$(NVCC) $(NVLIBFLAGS) $(NVDEBUG) testAsyncRMP/testGPUAsyncRMP.cu -o output/gpuTestAsync.o $(NVFLAGS)
-	$(NVCC) $(NVDEBUG) output/gpuTestAsync.o output/cudaRegion.o output/Region.o -o output/gpuTestAsyncRMP $(NVFLAGS)
+	$(NVCC) $(NVDEBUG) output/gpuTestAsync.o output/cudaRegion.o output/Region.o -o bin/gpuTestAsyncRMP $(NVFLAGS)
 
 gpuTestStereoMRF: StereoMRF/StereoMRF.cu gpu/Region.h
 	$(NVCC) $(NVLIBFLAGS) $(NVDEBUG) gpu/Region.cu -o output/cudaRegion.o $(NVFLAGS)

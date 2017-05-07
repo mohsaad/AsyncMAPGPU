@@ -4,7 +4,7 @@
 #include <functional>
 #include <algorithm>
 
-#include "../libAsyncRMP/Region.h"
+#include "../gpu/Region.h"
 
 struct Parameters {
 	int MRFWidth;
@@ -19,6 +19,7 @@ int PerformInference(std::vector<int>& info, std::vector<T>& volume, const Param
 	g.AddVariables(std::vector<int>(info[1] * info[2], info[0]));
 	std::vector<typename MPGraph<T, int>::PotentialID> pots;
 
+        std::cout << "Building Cost Volume" << std::endl;
 	T* volumePtr = &volume[0];
 	for (int x = 0; x < info[2]; ++x) {
 		for (int y = 0; y < info[1]; ++y) {
@@ -69,19 +70,22 @@ int PerformInference(std::vector<int>& info, std::vector<T>& volume, const Param
 		}
 	}*/
 
+        std::cout << "Read cost volume." << std::endl;
 	g.AllocateMessageMemory();
-        g.CoptMessageMemory();
+        g.CopyMessageMemory();
+        std::cout << "Built GPU graph" << std::endl;
 
 
 	CPrecisionTimer CTmr;
 	CTmr.Start();
 	//AsyncRMP<T, int> ARMP;
 	//AsyncRMPThread<T, int> ARMP;
-	CudaAsyncRMP<T, int> ARMP;
+	CudaAsyncRMPThread<T, int> ARMP;
         
         ARMP.CudaRunMP(g, T(1.0), params.numIterations, params.numThreads, params.WaitingTime);
 	std::cout << CTmr.Stop() << std::endl;
 
+        /*
 	T* belPtr = NULL;
 	size_t BelSize = ARMP.GetBeliefs(g, 1.0f, &belPtr, true);
 
@@ -90,7 +94,8 @@ int PerformInference(std::vector<int>& info, std::vector<T>& volume, const Param
 	ofs.close();
 
 	g.DeleteBeliefs();
-	return 0;
+	*/
+        return 0;
 }
 
 int main(int argc, char** argv) {
@@ -99,7 +104,7 @@ int main(int argc, char** argv) {
 #ifdef _MSC_VER
 	std::string fn("..\\StereoMatching\\CostVolume.dat");
 #else
-	std::string fn("../data/CostVolume.dat");
+	std::string fn("data/CostVolume.dat");
 #endif
 
 	std::ifstream ifs(fn.c_str(), std::ios_base::binary | std::ios_base::in);

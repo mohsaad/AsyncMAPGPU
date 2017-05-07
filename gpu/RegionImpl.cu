@@ -1822,17 +1822,19 @@ int AsyncRMPThread<T,S>::RunMP(MPGraph<T, S>& g, T epsilon, int numIterations, i
 
 template<typename T, typename S>
 size_t AsyncRMPThread<T,S>::GetBeliefs(MPGraph<T, S>& g, T epsilon, T** belPtr, bool OnlyUnaries) {
-    // size_t msgSize = g.GetLambdaSize();
-    // if (msgSize == 0) {
-    //     return g.ComputeBeliefs(NULL, epsilon, belPtr, OnlyUnaries);
-    // } else {
-    //     if (lambdaGlobal.size() != msgSize) {
-    //         std::cout << "Message size does not fit requirement. Reassigning." << std::endl;
-    //         lambdaGlobal.assign(msgSize, T(0));
-    //     }
-    //     return g.ComputeBeliefs(&lambdaGlobal[0], epsilon, belPtr, OnlyUnaries);
-    // }
-    return size_t(-1);
+    /*
+    size_t msgSize = g.GetLambdaSize();
+    if (msgSize == 0) {
+         return g.ComputeBeliefs(NULL, epsilon, belPtr, OnlyUnaries);
+    } else {
+         if (lambdaGlobal.size() != msgSize) {
+             std::cout << "Message size does not fit requirement. Reassigning." << std::endl;
+             lambdaGlobal.assign(msgSize, T(0));
+         }
+         return g.ComputeBeliefs(&lambdaGlobal[0], epsilon, belPtr, OnlyUnaries);
+    }
+    */
+    return size_t(0);
 }
 
 template<typename T, typename S>

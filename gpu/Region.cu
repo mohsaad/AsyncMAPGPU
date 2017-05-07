@@ -186,7 +186,7 @@ int CudaAsyncRMPThread<T,S>::CudaRunMP(MPGraph<T, S>& g, T epsilon, int numItera
 
     RegionUpdateKernel<<<DimGrid, DimBlock, 0, streamExec>>>(gPtr, epsilon, numThreadUpdates, devLambdaGlobal, devRunFlag, numThreads);
         
-    for (int k = 0; k < 200; ++k)
+    for (int k = 0; k < numIterations; ++k)
     {
         std::cout << "Iteration " << k << std::endl;
         std::this_thread::sleep_for(std::chrono::milliseconds(WaitTimeInMS));
