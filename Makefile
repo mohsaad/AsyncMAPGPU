@@ -17,9 +17,7 @@ else
 endif
 
 all:
-	make gpuTestAsyncRMP
-	make testAsyncRMP
-
+	make gpuTestStereoMRF
 clean:
 	rm -f bin/*
 	rm -f *.o
@@ -36,8 +34,13 @@ testRMP: testRMP/TestRMP.cpp libAsyncRMP/Region.h
 	$(CC) testRMP/TestRMP.cpp libAsyncRMP/Region.cpp -o bin/testRMP $(CFLAGS) $(LFLAGS) $(LLIBS) $(OPTS)
 
 gpuTestAsyncRMP: testAsyncRMP/testGPUAsyncRMP.cpp gpu/Region.h
-	$(NVCC) $(NVLIBFLAGS) $(NVDEBUG) gpu/Region.cu -o bin/cudaRegion.o $(NVFLAGS)
-	$(NVCC) $(NVLIBFLAGS) $(NVDEBUG) gpu/RegionImpl.cu -o bin/Region.o $(NVFLAGS)
-	$(NVCC) $(NVLIBFLAGS) $(NVDEBUG) testAsyncRMP/testGPUAsyncRMP.cu -o bin/gpuTestAsync.o $(NVFLAGS)
-	$(NVCC) $(NVDEBUG) bin/gpuTestAsync.o bin/cudaRegion.o bin/Region.o -o bin/gpuTestAsyncRMP $(NVFLAGS)
-	# $(CC) $(CUDAFLAGS) testAsyncRMP/testGPUAsyncRMP.cpp  gpu/Region.cpp bin/cudaRegion.o -o bin/gpuTestAsyncRMP $(CFLAGS) $(LFLAGS) $(LLIBS) $(OPTS)
+	$(NVCC) $(NVLIBFLAGS) $(NVDEBUG) output/Region.cu -o output/cudaRegion.o $(NVFLAGS)
+	$(NVCC) $(NVLIBFLAGS) $(NVDEBUG) output/RegionImpl.cu -o output/Region.o $(NVFLAGS)
+	$(NVCC) $(NVLIBFLAGS) $(NVDEBUG) testAsyncRMP/testGPUAsyncRMP.cu -o output/gpuTestAsync.o $(NVFLAGS)
+	$(NVCC) $(NVDEBUG) output/gpuTestAsync.o output/cudaRegion.o output/Region.o -o output/gpuTestAsyncRMP $(NVFLAGS)
+
+gpuTestStereoMRF: StereoMRF/StereoMRF.cu gpu/Region.h
+	$(NVCC) $(NVLIBFLAGS) $(NVDEBUG) gpu/Region.cu -o output/cudaRegion.o $(NVFLAGS)
+	$(NVCC) $(NVLIBFLAGS) $(NVDEBUG) gpu/RegionImpl.cu -o output/Region.o $(NVFLAGS)
+	$(NVCC) $(NVLIBFLAGS) $(NVDEBUG) StereoMRF/StereoMRF.cu -o output/stereoMRF.o $(NVFLAGS)
+	$(NVCC) $(NVDEBUG) output/stereoMRF.o output/cudaRegion.o output/Region.o -o bin/gpuStereoMRF $(NVFLAGS)
