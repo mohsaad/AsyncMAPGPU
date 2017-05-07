@@ -4,7 +4,7 @@
 #include <functional>
 #include <algorithm>
 
-#include "../libAsyncRMP/Region.h"
+#include "../origLib/Region.h"
 
 struct Parameters {
 	int MRFWidth;
@@ -95,7 +95,7 @@ int main(int argc, char** argv) {
 #ifdef _MSC_VER
 	std::string fn("..\\StereoMatching\\CostVolume.dat");
 #else
-	std::string fn("StereoMatching/CostVolume.dat");
+	std::string fn("data/CostVolume.dat");
 #endif
 
 	std::ifstream ifs(fn.c_str(), std::ios_base::binary | std::ios_base::in);

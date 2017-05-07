@@ -69,12 +69,9 @@ bool MPGraph<T,S>::DeallocateGpuGraph()
     for(size_t i = 0; i < deviceNodes; i++)
     {
         DeallocateGpuNode(GpuGraph[i]);
-
-
-
     }
 
-    for(size_t i 0; i < numEdges;i++)
+    for(size_t i = 0; i < numEdges;i++)
     {
         DeallocateGpuEdge(GpuEdges[i]);
     }
@@ -85,6 +82,7 @@ bool MPGraph<T,S>::DeallocateGpuGraph()
     gpuErrchk(cudaFree(deviceCardinalities));
     gpuErrchk(cudaFree(deviceValidRegionMapping));
 
+    return true;
 }
 
 
@@ -94,22 +92,22 @@ template<typename T, typename S>
 bool MPGraph<T,S>::DeallocateGpuNode(GpuMPNode* node)
 {
     GpuMPNode hostNode(0, NULL, NULL, 0, 0);
-    
+
     gpuErrchk(cudaMemcpy(&hostNode, node, sizeof(hostNode), cudaMemcpyDeviceToHost));
     GpuMsgContainer hostContainer(0, NULL, NULL, NULL);
     for(int i = 0; i < hostNode.numParents; i++)
     {
-        gpuErrchk(cudaMemcpy(&hostContainer, hostNode.GpuParents + i, sizeof(hostContainer), cudaMemcpyDeviceToHost);
+        gpuErrchk(cudaMemcpy(&hostContainer, hostNode.GpuParents + i, sizeof(hostContainer), cudaMemcpyDeviceToHost));
         gpuErrchk(cudaFree(hostContainer.Translator));
 
     }
     for(size_t i = 0; i < hostNode.numChildren; i++)
     {
-        gpuErrchk(cudaMemcpy(&hostContainer, hostNode.GpuChildren, sizeof(hostContainer), cudaMemcpyDeviceToHost);
+        gpuErrchk(cudaMemcpy(&hostContainer, hostNode.GpuChildren, sizeof(hostContainer), cudaMemcpyDeviceToHost));
         gpuErrchk(cudaFree(hostContainer.Translator));
     }
-    gpuErrchk(cudaFree(hostNode.numParents));
-    gpuErrchk(cudaFree(hostNode.numChildren));
+    gpuErrchk(cudaFree(hostNode.GpuParents));
+    gpuErrchk(cudaFree(hostNode.GpuChildren));
 
 
     gpuErrchk(cudaFree(hostNode.varIX));
@@ -121,15 +119,16 @@ bool MPGraph<T,S>::DeallocateGpuNode(GpuMPNode* node)
 }
 
 template<typename T, typename S>
-bool MPGraph<T,S>::DeallocateGpuEdge(GpuEdge* edge)
-{ 
+bool MPGraph<T,S>::DeallocateGpuEdge(GpuEdgeID* edge)
+{
     GpuEdgeID hostEdge {NULL, NULL, NULL,0, NULL, NULL, 0};
     gpuErrchk(cudaMemcpy(&hostEdge, edge, sizeof(hostEdge), cudaMemcpyDeviceToHost));
     gpuErrchk(cudaFree(hostEdge.rStateMultipliers));
     gpuErrchk(cudaFree(hostEdge.newVarStateMultipliers));
     gpuErrchk(cudaFree(hostEdge.newVarIX));
-    
+
     gpuErrchk(cudaFree(edge));
+    return true;
 
 }
 
@@ -276,7 +275,7 @@ int MPGraph<T,S>::ResetMessageMemory()
         // children
         for(int j = 0; j < Graph[i]->Children.size(); j++)
         {
-	
+
 	    gpuErrchk(cudaMemcpy(&hostContainer, CpuGpuMsgMap[&(Graph[i]->Children[j])], sizeof(hostContainer), cudaMemcpyDeviceToHost));
 	    Graph[i]->Children[j].lambda = hostContainer.lambda;
 	}
@@ -414,7 +413,7 @@ int MPGraph<T,S>::CopyMessageMemory()
             // malloc and copy
             gpuErrchk(cudaMemcpy(&hostNode.GpuChildren[j], &hostContainer, sizeof(hostContainer), cudaMemcpyHostToDevice));
 
-       	    
+
 	    CpuGpuMsgMap[&(Graph[i]->Children[j])] = &(hostNode.GpuChildren[j]);
 	    //CpuGpuMsgMap.insert(std::pair<MsgContainer*, GpuMsgContainer*>(&(Graph[i]->Children[j]), &(hostNode.GpuChildren[j])));
 	}
@@ -1908,130 +1907,5 @@ RMP<T,S>::~RMP()
 template<typename T, typename S>
 int RMP<T,S>::RunMP(MPGraph<T, S>& g, T epsilon)
 {
-/*
-    size_t msgSize = g.GetLambdaSize();
-    if (msgSize == 0) {
-         typename MPGraph<T, S>::DualWorkspaceID dw = g.HostAllocateDualWorkspaceMem(epsilon);
-         std::cout << "0: " << g.HostComputeDual(NULL, epsilon, dw) << std::endl;
-         g.HostDeAllocateDualWorkspaceMem(dw);
-         return 0;
-    }
-   
-    //std::vector<T> lambdaGlobal(msgSize, T(0));
-    
-    T* devLambdaGlobal = NULL;
-    gpuErrchk(cudaMalloc((void**)&devLambdaGlobal, sizeof(T) * msgSize));
-    gpuErrchk(cudaMemset((void*)devLambdaGlobal, T(0), sizeof(T)*msgSize));
-
-
-    // allocate on host memory for cuda streaming
-    T* lambdaGlob = NULL;
-    gpuErrchk(cudaMallocHost((void**)&lambdaGlob, sizeof(T)*msgSize));
-    gpuErrchk(cudaMemset((void*)lambdaGlob, T(0), sizeof(T)*msgSize));
-
-
-    
-
-    // allocate space and copy graph to GPU
-    MPGraph<T,S>* gPtr = NULL;
-    gpuErrchk(cudaMalloc((void**)&gPtr, sizeof(g)));
-    gpuErrchk(cudaMemcpy(gPtr, &g, sizeof(g), cudaMemcpyHostToDevice));
-
-    // initialize the number of region updates
-    size_t* numThreadUpdates = NULL;
-    size_t* hostThreadUpdates = new size_t[numThreads];
-    gpuErrchk(cudaMalloc((void**)&numThreadUpdates, numThreads * sizeof(size_t)));
-    gpuErrchk(cudaMemset((void*)numThreadUpdates, 0, numThreads * sizeof(size_t)));
-
-    // allocate run flag
-    int* devRunFlag = NULL;
-    gpuErrchk(cudaMalloc((void**)&devRunFlag, sizeof(int)));
-    gpuErrchk(cudaMemset((void*)devRunFlag, 0, sizeof(int)));
-
-    // create an asynchronous cuda stream
-    // we only have two streams, the main (CPU) stream, and the GPU one
-    // CPU stream only copies back every so often (or writes to the GPU)
-    // GPU is executing
-    cudaStream_t streamCopy, streamExec;
-    gpuErrchk(cudaStreamCreate(&streamCopy));
-    gpuErrchk(cudaStreamCreate(&streamExec));
-
-
-    // create a ThreadSync object (not necessary at all, but hey, I wanna
-    // make sure this actually works)
-    ThreadSync<T, S> sy(numThreads, lambdaGlob, epsilon, &g);
-
-    // grid/block dimensions
-    dim3 DimGrid(1,1,1);
-    dim3 DimBlock(32,1,1);
-    int stopFlag = 1;
-
-    std::cout << "Executing kernel..." << std::endl;
-
-
-    // start the kernel
-    EdgeUpdateKernel<<<DimGrid, DimBlock, 0, streamExec>>>(gPtr, epsilon, numThreadUpdates, devLambdaGlobal, devRunFlag, numThreads);
-
-
-   *
-    for (int k = 0; k < numIterations; ++k)
-    {
-        std::cout << "Iteration " << k << std::endl;
-        std::this_thread::sleep_for(std::chrono::milliseconds(WaitTimeInMS));
-
-        cudaMemcpyAsync(lambdaGlob, devLambdaGlobal, sizeof(T)*msgSize, cudaMemcpyDeviceToHost, streamCopy);
-        sy.ComputeDualNoSync();
-
-    }
-    
-    gpuErrchk(cudaMemcpyAsync(devRunFlag, &stopFlag, sizeof(int), cudaMemcpyHostToDevice, streamCopy));
-
-    cudaDeviceSynchronize();
-    // now, we can block
-    gpuErrchk(cudaMemcpy(hostThreadUpdates, numThreadUpdates, sizeof(size_t)*numThreads, cudaMemcpyDeviceToHost));
-
-    g.ResetMessageMemory();
-
-    cudaMemcpy(lambdaGlob, devLambdaGlobal, sizeof(T)*msgSize, cudaMemcpyDeviceToHost);
-    sy.ComputeDualNoSync();
-    gpuErrchk(cudaMemcpy(&stopFlag, devRunFlag, sizeof(int), cudaMemcpyDeviceToHost));
-    if(stopFlag == 1)
-    {
-        std::cout << "Kernel Terminated" << std::endl;
-    }
-
-    size_t regionUpdates = 0;
-    for(int k=0;k<numThreads;++k) {
-        size_t tmp = hostThreadUpdates[k];
-        std::cout << "Thread " << k << ": " << tmp << std::endl;
-        regionUpdates += tmp;
-    }
-
-    cudaFree(gPtr);
-    cudaFreeHost(lambdaGlob);
-    cudaFree(devRunFlag);
-    cudaFree(devLambdaGlobal);
-    cudaFreeHost(lambdaGlob);
-    delete [] hostThreadUpdates;
-    cudaStreamDestroy(streamCopy);
-    cudaStreamDestroy(streamExec);
-
-    cudaDeviceReset();
-
-    std::cout << "Region updates: " << regionUpdates << std::endl;
-    std::cout << "Total regions:  " << g.HostNumberOfRegionsWithParents() << std::endl;
-
-//    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-    std::cout << "Terminating program." << std::endl;
-    //typename MPGraph<T, S>::RRegionWorkspaceID rrw = g.AllocateReparameterizeRegionWorkspaceMem(epsilon);
-    for (int iter = 0; iter < 20; ++iter) {
-         for (int k = 0; k < int(g.NumberOfRegionsWithParents()); ++k) {
-             //g.ReparameterizeRegion(&lambdaGlobal[0], k, epsilon, false, rrw);
-         }
-        // std::cout << iter << ": " << g.ComputeDual(&lambdaGlobal[0], epsilon, dw) << std::endl;
-    }
-    //g.DeAllocateReparameterizeRegionWorkspaceMem(rrw);
-    //g.DeAllocateDualWorkspaceMem(dw);
-*/
-    return 0;
+return 0;
 }

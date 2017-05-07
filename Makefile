@@ -13,10 +13,11 @@ CUDAFLAGS= -I/usr/local/cuda/include -L/usr/local/cuda/lib64 -lcuda -lcudart
 ifdef FUNC
 	OPTS = -DWHICH_FUNC=$(FUNC)
 else
-	OPTS = -DWHICH_FUNC=2
+	OPTS = -DWHICH_FUNC=1
 endif
 
 all:
+	#mkdir output
 	make gpuTestStereoMRF
 clean:
 	rm -f bin/*
@@ -24,7 +25,7 @@ clean:
 	rm -f prog_TestAsyncRMP
 	rm -f prog_StereoMRF_*
 	rm -f prog_TestRMP
-
+	rm -f output/*
 
 
 testAsyncRMP: testAsyncRMP/TestAsyncRMP.cpp libAsyncRMP/Region.h
@@ -32,6 +33,12 @@ testAsyncRMP: testAsyncRMP/TestAsyncRMP.cpp libAsyncRMP/Region.h
 
 testRMP: testRMP/TestRMP.cpp libAsyncRMP/Region.h
 	$(CC) testRMP/TestRMP.cpp libAsyncRMP/Region.cpp -o bin/testRMP $(CFLAGS) $(LFLAGS) $(LLIBS) $(OPTS)
+
+
+prog_StereoMRF_$(FUNC): StereoMRF/StereoMRF.cpp libAsyncRMP/Region.h
+	$(CC) StereoMRF/StereoMRF.cpp -o prog_StereoMRF_$(FUNC) $(CFLAGS) $(LFLAGS) $(LLIBS) $(OPTS)
+
+prog_StereoMRF: prog_StereoMRF_$(FUNC)
 
 gpuTestAsyncRMP: testAsyncRMP/testGPUAsyncRMP.cpp gpu/Region.h
 	$(NVCC) $(NVLIBFLAGS) $(NVDEBUG) gpu/Region.cu -o output/cudaRegion.o $(NVFLAGS)

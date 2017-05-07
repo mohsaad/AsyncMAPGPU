@@ -378,7 +378,7 @@ class MPGraph
 
         int ResetMessageMemory();
 
-        bool DeallocateGpuGraphh();
+        bool DeallocateGpuGraph();
 
     private:
 
@@ -393,7 +393,7 @@ class MPGraph
 
 
 
-        bool DeallocateGpuEdge(GpuEdge* edge);
+        bool DeallocateGpuEdge(GpuEdgeID* edge);
     
 
 	bool DeallocateGpuContainer(GpuMsgContainer* container);
