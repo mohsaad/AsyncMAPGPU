@@ -223,14 +223,14 @@ int CudaAsyncRMPThread<T,S>::CudaRunMP(MPGraph<T, S>& g, T epsilon, int numItera
     }
 
     //cudaFree(gPtr);
-    cudaFreeHost(lambdaGlob);
-    cudaFree(devRunFlag);
-    cudaFree(indivLambda);
-    cudaFree(devLambdaGlobal);
-    cudaFreeHost(lambdaGlob);
-    delete [] hostThreadUpdates;
-    cudaStreamDestroy(streamCopy);
-    cudaStreamDestroy(streamExec);
+    //cudaFreeHost(lambdaGlob);
+    //cudaFree(devRunFlag);
+    //cudaFree(indivLambda);
+    //cudaFree(devLambdaGlobal);
+    //cudaFreeHost(lambdaGlob);
+    //delete [] hostThreadUpdates;
+    //cudaStreamDestroy(streamCopy);
+    //cudaStreamDestroy(streamExec);
 
     cudaDeviceReset();
 
