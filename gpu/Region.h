@@ -16,7 +16,7 @@
 #include <iomanip>
 #include <string.h>
 #include <assert.h>
-#include <cuda.h>
+#include <cuda_runtime.h>
 
 // vectors for lambdaGlobal
 #include <thrust/host_vector.h>
