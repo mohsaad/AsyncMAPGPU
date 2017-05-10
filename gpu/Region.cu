@@ -32,23 +32,11 @@ __global__ void EdgeUpdateKernel(MPGraph<T, S>* g, T epsilon, size_t* numThreadU
         int rangeRandNums = g->NumberOfEdges();
 
 
-
-
-        while(true)
-        {
-            if(!*runFlag)
-            {
-                break;
-            }
-            uid = floorf(curand_uniform(&state) * rangeRandNums);
+        uid = floorf(curand_uniform(&state) * rangeRandNums);
 	    g->CopyMessagesForEdge(lambdaGlobal, devLambdaBase, uid);
 	    g->ReparameterizeEdge(devLambdaBase, uid, epsilon, false, rew);
 	    g->UpdateEdge(devLambdaBase, lambdaGlobal, uid, false);
-//`
-            numThreadUpdates[tx]++;
-	//	__syncthreads();
 
-	}
         g->DeAllocateReparameterizeEdgeWorkspaceMem(rew);
         free(devLambdaBase);
     }
@@ -77,39 +65,23 @@ __global__ void RegionUpdateKernel(MPGraph<T, S>* g, T epsilon, size_t* numThrea
 
         // allocate an array that will act as our base
         size_t msgSize = g->GetLambdaSize();
-	T* devLambdaBase = &(lambdaBase[tx*msgSize]);
-	memset(devLambdaBase, T(0), sizeof(T) * msgSize);
+	    T* devLambdaBase = (T*)malloc(msgSize * sizeof(T));
+	    memset(devLambdaBase, T(0), sizeof(T) * msgSize);
 
         int rangeRandNums = g->NumberOfRegionsWithParents();
 
-
-
-
-//         for(int i = 0; i < rangeRandNums; i++)
-//         {
-        while(true)
-        {
-            if(!checkFlag(runFlag))
-            {
-                break;
-            }
-            uid = floorf(curand_uniform(&state) * rangeRandNums);
+        uid = floorf(curand_uniform(&state) * rangeRandNums);
 	    g->CopyMessagesForStar(lambdaGlobal, devLambdaBase, uid);
 	    g->ReparameterizeRegion(devLambdaBase, uid, epsilon, false, rew);
 	    g->UpdateRegion(devLambdaBase, lambdaGlobal, uid, false);
-//`
-	    numThreadUpdates[tx]++;
 
-	}
-//
-//         // free device pointers
-         g->DeAllocateReparameterizeRegionWorkspaceMem(rew);
-         free(devLambdaBase);
-//
-         //atomicAdd(runFlag, numThreads);
-//
+    
+        // free device pointers
+        g->DeAllocateReparameterizeRegionWorkspaceMem(rew);
+        free(devLambdaBase);
+
+
      }
-//
 }
 
 
@@ -187,50 +159,28 @@ int CudaAsyncRMPThread<T,S>::CudaRunMP(MPGraph<T, S>& g, T epsilon, int numItera
     std::cout << "Executing kernel..." << std::endl;
 
 
-    // start the kernel
-   // EdgeUpdateKernel<<<DimGrid, DimBlock, 0, streamExec>>>(gPtr, epsilon, numThreadUpdates, devLambdaGlobal, devRunFlag, numThreads);
 
-    RegionUpdateKernel<<<DimGrid, DimBlock, 0, streamExec>>>(gPtr, epsilon, numThreadUpdates, devLambdaGlobal, indivLambda, devRunFlag, numThreads);
+    RegionUpdateKernel<<<DimGrid, DimBlock>>>(gPtr, epsilon, numThreadUpdates, devLambdaGlobal, indivLambda, devRunFlag, numThreads);
 
-    for (int k = 0; k < numIterations; ++k)
-    {
-        std::cout << "Iteration " << k << std::endl;
-        std::this_thread::sleep_for(std::chrono::milliseconds(WaitTimeInMS));
-
-        cudaMemcpyAsync(lambdaGlob, devLambdaGlobal, sizeof(T)*msgSize, cudaMemcpyDeviceToHost, streamCopy);
-        cudaStreamSynchronize(streamCopy);
-        sy.ComputeDualNoSync();
-
-    }
-
-    gpuErrchk(cudaMemcpyAsync(devRunFlag, &stopFlag, sizeof(bool), cudaMemcpyHostToDevice, streamCopy));
-
-    cudaStreamSynchronize(streamCopy);
-    // now, we can block
     gpuErrchk(cudaMemcpy(hostThreadUpdates, numThreadUpdates, sizeof(size_t)*numThreads, cudaMemcpyDeviceToHost));
 
-    g.ResetMessageMemory();
 
     cudaMemcpy(lambdaGlob, devLambdaGlobal, sizeof(T)*msgSize, cudaMemcpyDeviceToHost);
     sy.ComputeDualNoSync();
     std::cout << "Kernel Terminated" << std::endl;
 
     size_t regionUpdates = 0;
-    for(int k=0;k<numThreads;++k) {
-        size_t tmp = hostThreadUpdates[k];
-       // std::cout << "Thread " << k << ": " << tmp << std::endl;
-        regionUpdates += tmp;
-    }
+
 
     //cudaFree(gPtr);
-    //cudaFreeHost(lambdaGlob);
+    cudaFreeHost(lambdaGlob);
     //cudaFree(devRunFlag);
     //cudaFree(indivLambda);
     //cudaFree(devLambdaGlobal);
     //cudaFreeHost(lambdaGlob);
-    //delete [] hostThreadUpdates;
-    //cudaStreamDestroy(streamCopy);
-    //cudaStreamDestroy(streamExec);
+    delete [] hostThreadUpdates;
+    cudaStreamDestroy(streamCopy);
+    cudaStreamDestroy(streamExec);
 
     cudaDeviceReset();
 
