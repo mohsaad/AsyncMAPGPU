@@ -101,6 +101,8 @@ int PerformInference(std::vector<int>& info, std::vector<T>& volume, const Param
 int main(int argc, char** argv) {
 	std::cout << "Test..." << std::endl;
 
+    cudaDeviceReset();
+
 #ifdef _MSC_VER
 	std::string fn("..\\StereoMatching\\CostVolume.dat");
 #else

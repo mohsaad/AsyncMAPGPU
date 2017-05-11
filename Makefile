@@ -5,7 +5,7 @@ LFLAGS =
 LLIBS =
 
 NVCC = nvcc
-NVLIBFLAGS = -dc -std=c++11 -rdc=true -arch=sm_61 --expt-relaxed-constexpr
+NVLIBFLAGS = -dc -std=c++11 -rdc=true -arch=sm_37 --expt-relaxed-constexpr
 NVFLAGS = -Wno-deprecated-gpu-targets -O0
 NVDEBUG = -g -G
 
@@ -29,14 +29,14 @@ clean:
 
 
 testAsyncRMP: testAsyncRMP/TestAsyncRMP.cpp libAsyncRMP/Region.h
-	$(CC) testAsyncRMP/TestAsyncRMP.cpp libAsyncRMP/Region.cpp -o bin/testAsyncRMP $(CFLAGS) -g $(LFLAGS) $(LLIBS) $(OPTS)
+	$(CC) libAsyncRMP/Region.h testAsyncRMP/TestAsyncRMP.cpp libAsyncRMP/Region.cpp -o bin/testAsyncRMP $(CFLAGS) -g $(LFLAGS) $(LLIBS) $(OPTS)
 
 testRMP: testRMP/TestRMP.cpp libAsyncRMP/Region.h
 	$(CC) testRMP/TestRMP.cpp libAsyncRMP/Region.cpp -o bin/testRMP $(CFLAGS) $(LFLAGS) $(LLIBS) $(OPTS)
 
 
 prog_StereoMRF_$(FUNC): StereoMRF/StereoMRF.cpp libAsyncRMP/Region.h
-	$(CC) StereoMRF/StereoMRF.cpp -o prog_StereoMRF_$(FUNC) $(CFLAGS) $(LFLAGS) $(LLIBS) $(OPTS)
+	$(CC) StereoMRF/StereoMRF_old.cpp -o prog_StereoMRF_$(FUNC) $(CFLAGS) $(LFLAGS) $(LLIBS) $(OPTS)
 
 prog_StereoMRF: prog_StereoMRF_$(FUNC)
 
@@ -47,6 +47,5 @@ gpuTestAsyncRMP: testAsyncRMP/testGPUAsyncRMP.cpp gpu/Region.h
 	$(NVCC) $(NVDEBUG) output/gpuTestAsync.o output/cudaRegion.o output/Region.o -o bin/gpuTestAsyncRMP $(NVFLAGS)
 
 gpuTestStereoMRF: StereoMRF/StereoMRF.cu gpu/Region.h
-	$(NVCC) $(NVLIBFLAGS) $(NVDEBUG) gpu/RegionImpl.cu -o output/Region.o $(NVFLAGS)`
-	$(NVCC) $(NVLIBFLAGS) $(NVDEBUG) StereoMRF/StereoMRF.cu -o output/StereoMRF.o $(NVFLAGS)
-	$(NVCC) $(NVDEBUG) output/stereoMRF.o output/Region.o -o bin/gpuStereoMRF $(NVFLAGS)
+	$(NVCC) $(NVLIBFLAGS) $(NVDEBUG) StereoMRF/StereoMRF.cu -o output/stereoMRF.o $(NVFLAGS)
+	$(NVCC) $(NVDEBUG) output/stereoMRF.o -o bin/gpuStereoMRF $(NVFLAGS)
