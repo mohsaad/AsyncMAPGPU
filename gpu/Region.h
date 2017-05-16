@@ -53,7 +53,7 @@ inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=t
 }
 
 
-#define BLOCK_SIZE 32
+#define BLOCK_SIZE 256
 /*
     The MPGraph class. Defines a graph.
 
@@ -571,7 +571,7 @@ __global__ void RegionUpdateKernel(MPGraph<T, S>* g, T epsilon, size_t* numThrea
         int rangeRandNums = g->NumberOfRegionsWithParents();
         while(checkFlag(runFlag))
         {
-            for(int i = 0; i < msgSize - 32; i += 32)
+            for(int i = 0; i < rangeRandNums - BLOCK_SIZE; i += BLOCK_SIZE)
             {
                 if(!checkFlag(runFlag))
                     break;
